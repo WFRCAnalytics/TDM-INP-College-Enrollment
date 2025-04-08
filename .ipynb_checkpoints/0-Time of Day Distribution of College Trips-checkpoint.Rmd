@@ -1,0 +1,113 @@
+---
+title: "Time of Day Distribution of College Trips"
+author: "Chris Day"
+date: "2022-11-11"
+output: html_document
+---
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE, warning = FALSE
+)
+```
+
+```{r}
+library(tidyverse)
+library(kableExtra)
+```
+
+
+## Introduction
+This Rmarkdown is for calculating the time of day distribution of college trips with a college origin zone or a college destination zone. When are people who go to college going to college, and when are people who go to college leaving from college? This Rmarkdown will calculate those time distributions by college location.
+
+## Inputs
+The input data needed to calculate our desired output includes the following:
+
+  - dfCollegeDataOD.csv: StreetLight data pulled down off of BigQuery containing trip data to and from college streetlight tazs.
+  - College_to_SL_COTAZID.csv: a conversion csv file that basically serves as a "lookup table" between streetlight college tazs and WFRC modeling tazs
+  
+We read in these two input files below.
+```{r inputs}
+dfCollegeDataOD <- read_csv("intermediate/dfCollegeDataOD.csv")
+College_to_SL_COTAZID <- read_csv("data/College_to_SL_COTAZID.csv")
+```
+
+## Data Analysis
+The data analysis for calculating the time of day distribution is quite simple. First we join the college names to the corresponding streetlight zones. 
+
+```{r}
+dfCollegeDataOD_taz <- dfCollegeDataOD %>%
+  left_join(College_to_SL_COTAZID, by = c("origin_zone_name" = "SL_COTAZID")) %>%
+  rename("O_COLLEGE" = "COLLEGE") %>%
+  left_join(College_to_SL_COTAZID, by = c("destination_zone_name" = "SL_COTAZID")) %>%
+  rename("D_COLLEGE" = "COLLEGE")
+```
+
+Next, we specify the periods and filter out DT periods (or totals for each day).
+
+```{r}
+dfCollegeDataOD_period <- dfCollegeDataOD_taz %>%
+  mutate(
+    period = case_when(
+      day_part == "1: Early AM (12am-6am)" ~ "EV",
+      day_part == "2: Peak AM (6am-9am)" ~ "AM",
+      day_part == "3: Mid-Day (9am-3pm)" ~ "MD",
+      day_part == "4: Peak PM (3pm-6pm)" ~ "PM",
+      day_part == "5: Late PM (6pm-12am)" ~ "EV",
+      TRUE ~ "DT"
+    )) %>%
+  mutate(DayType = ifelse(day_type == "0: All Days (Mo-Su)", "All Days (Mo-Su)",
+                   ifelse(day_type == "1: Weekday (Tu-Th)", "Weekday (Tu-Th)", "Weekend (Sa-Su)")))
+```
+
+```{r}
+dfCollegeDataOD_filtered <- dfCollegeDataOD_period %>%
+  filter(period != "DT")
+```
+
+Finally, we summarize the data and calculate the percentage of trips by trip start and trip end, college type, day type, and period. This analysis is done below and then is output to a csv in the intermediate folder.
+
+```{r}
+o_dfCollegeDataOD_summarized <- dfCollegeDataOD_filtered %>%
+  group_by(O_COLLEGE,DayType,period) %>%
+  summarize(Volume = sum(o_d_traffic_calibrated_trip_volume)) %>%
+  mutate(PCT = round(Volume / sum(Volume) * 100, 2)) %>%
+  rename("Period" = "period", "COLLEGE" = "O_COLLEGE") %>%
+  mutate(TripType = "Trip Start", COLLEGE = ifelse(is.na(COLLEGE), "Other", COLLEGE)) %>%
+  select(-Volume)
+
+d_dfCollegeDataOD_summarized <- dfCollegeDataOD_filtered %>%
+  group_by(D_COLLEGE,DayType,period) %>%
+  summarize(Volume = sum(o_d_traffic_calibrated_trip_volume)) %>%
+  mutate(PCT = round(Volume / sum(Volume) * 100, 2)) %>%
+  rename("Period" = "period", "COLLEGE" = "D_COLLEGE") %>%
+  mutate(TripType = "Trip End", COLLEGE = ifelse(is.na(COLLEGE), "Other", COLLEGE)) %>%
+  select(-Volume)
+```
+
+## Results
+Lets print out the results in a csv file. 
+
+```{r}
+dfCollegeDataOD_summarized <- bind_rows(o_dfCollegeDataOD_summarized, d_dfCollegeDataOD_summarized)
+write_csv(dfCollegeDataOD_summarized, "intermediate/collegeTimeOfDayDistribution.csv")
+```
+
+To help visualize the results, the following bar plots show the time of day distribution.
+
+```{r, fig.dim = c(11,11), echo=FALSE}
+ggplot(dfCollegeDataOD_summarized %>% filter(COLLEGE != "Other")) +
+  aes(x = COLLEGE, y = PCT, fill = Period, label = paste0(round(PCT,0), "%")) +
+  facet_grid(vars(TripType),vars(DayType)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Set2") +
+  ggtitle("Time of Day Distribution of College Trips for WFRC/MAG Modeling Space") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+

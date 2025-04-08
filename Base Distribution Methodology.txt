@@ -1,0 +1,9 @@
+College Base Distribution Methodology - Public Schools
+	1. Group Quarter from Census Block  --> TAZ Group Quarter (A) assign to closest Campus (closest)
+	2. Remove TAZ Group Quarter (A) from Zip Enrollment  [TotEnrolByZipByCollege.csv]
+	3. Distribute Remaining Zip Enrollment --> TAZs with HHs based on SL data distribution (fall, weekday, midday)
+
+College Base Distribution Methodology - Private Schools
+	1. Group Quarter from Census Block --> TAZ Group Quarter (A) assign to closest Campus (closest)
+	2. Remove TAZ Group Quarter (A) from Total Enrollment  [Control Total Spreadsheet]
+	3. Distribute Total Enrollment --> TAZs with HHs based on SL data distribution (fall, weekday, midday)
