@@ -1,1 +1,6 @@
+.env
+
+/.quarto/
+**/*.quarto_ipynb
+
 intermediate/*

@@ -1,0 +1,276 @@
+---
+title: "TAZ Group Quarters Update"
+author: "TDM Group"
+format: html
+editor: visual
+jupyter: python3
+---
+
+## 1. Libraries and Setup
+
+We will use `pygris` for Census data retrieval, `pandas`/`geopandas` for data manipulation, and `numpy` for calculation.
+
+```{python}
+import pandas as pd
+import geopandas as gpd
+from sqlalchemy.sql._elements_constructors import column
+
+import numpy as np
+import os
+
+from pygris import blocks, tracts
+from pygris.data import get_census
+from pygris.helpers import validate_state, validate_county
+```
+
+```{python}
+# Define file paths
+# Update this path to your specific TAZ shapefile location
+path_taz = r"data/TAZ/WFv1000_TAZ.shp"
+
+# Define Output folder
+output_folder = "intermediate"
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+```
+
+```{python}
+# --- Configuration ---
+target_state = "UT"
+target_counties = ["BOX ELDER", "WEBER", "DAVIS", "SALT LAKE", "UTAH"]
+```
+
+```{python}
+# --- 1. Validate FIPS Codes ---
+# Validate State
+state_fips = validate_state(target_state)
+print(f"State FIPS for {target_state}: {state_fips}")
+
+# Validate Counties and get their FIPS codes
+county_fips = [validate_county(state_fips, county) for county in target_counties]
+
+print(f"Target County FIPS: {county_fips}")
+```
+
+## 2. Get 2020 Decennial Census Data (Blocks)
+
+We fetch the **2020 Decennial Census** data (Table `P18_001N` - Total Group Quarters Population) at the **Block** level for Utah. We include geometry here because we will need the block shapes later to find centroids.
+
+```{python}
+# 1. Get Census Block Geometries for Utah
+# We only need the ID and geometry to link to the data
+print("Fetching 2020 Block Geometries...")
+geo_blocks_2020 = blocks(state=state_fips, county=county_fips, year=2020, cache=True)
+
+# 2. Get Decennial Census Data (Group Quarters Population)
+# P18_001N: Total Group Quarters Population
+print("Fetching 2020 Decennial Data...")
+df_dec_data = get_census(
+    dataset="dec/dhc",
+    variables=["P18_001N"],
+    year=2020,
+    params={
+        "for": f"block:*",
+        "in": f"state:{state_fips} county:{','.join(county_fips)}",
+    },
+    return_geoid=True,
+    guess_dtypes=True,
+)
+
+# 3. Merge Data to Geometry
+# Geometry uses specific year tags (GEOID20) while data uses standard (GEOID)
+df_blocks_2020 = (
+    geo_blocks_2020[["GEOID20", "geometry"]]
+    .merge(df_dec_data, left_on="GEOID20", right_on="GEOID")
+    .drop(columns=["GEOID20"])
+    .rename(columns={"P18_001N": "GQ_2020"})
+)
+
+print(f"Total Blocks: {len(df_blocks_2020)}")
+df_blocks_2020.explore("GQ_2020", cmap="Blues")
+```
+
+## 3. Calculate Block Proportions
+
+We can calculate the proportion of the Tract population that belongs to each Block directly using `groupby().transform()`. This broadcasts the sum of the group back to every row in that group, avoiding an explicit merge.
+
+```{python}
+# Calculate the total GQ Proportions for each block
+df_blocks_processed = df_blocks_2020.copy()
+
+# Create Block Group ID for later
+df_blocks_processed["GEOID_Tract"] = df_blocks_processed["GEOID"].str.slice(0, 11)
+
+# The lambda 'x / x.sum()' divides each block's population by its group's total
+df_blocks_processed["GQ_Prop"] = (
+    df_blocks_processed.groupby("GEOID_Tract")["GQ_2020"]
+    .transform(lambda x: x / x.sum())
+    .fillna(0)
+)
+
+# Review data
+display(df_blocks_processed[["GEOID", "GEOID_Tract", "GQ_2020", "GQ_Prop"]].head())
+```
+
+## 4. Get 2023 ACS Data (Tract)
+
+Now we fetch the **2023 ACS 5-Year** estimates for Group Quarters (Table `B26001_001E`) at the **Tract** level. We do not need geometry here, just the data to distribute.
+
+```{python}
+# 1. Get Tract Geometries
+print("Fetching 2023 Tract Geometries...")
+geo_tracts_2023 = tracts(state=state_fips, county=county_fips, year=2023, cache=True)
+
+# 2. Get ACS Data (Looping)
+print("Fetching 2023 ACS Tract Data...")
+df_acs_data = get_census(
+    dataset="acs/acs5",
+    variables=["B26001_001E"],
+    year=2023,
+    params={
+        "for": "tract:*",
+        "in": f"state:{state_fips} county:{','.join(county_fips)}",
+    },
+    return_geoid=True,
+    guess_dtypes=True,
+)
+
+# Clean and Rename
+df_acs_2023 = (
+    geo_tracts_2023[["GEOID", "geometry"]]
+    .merge(df_acs_data, on="GEOID", how="inner")
+    .rename(columns={"B26001_001E": "GQ_ACS_2023", "GEOID": "GEOID_Tract"})[
+        ["GEOID_Tract", "GQ_ACS_2023", "geometry"]
+    ]
+)
+
+print(f"Total Tracts: {len(df_acs_2023)}")
+df_acs_2023.head()
+```
+
+## 5. Distribute 2023 Data to Blocks (Integer Rounding)
+
+```{python}
+df_acs_2023.merge(
+    df_blocks_processed.groupby("GEOID_Tract")["GQ_2020"].sum().reset_index(),
+    on="GEOID_Tract",
+    how="left",
+).fillna({"GQ_2020": 0}).query(
+    "(GQ_2020 == 0 and GQ_ACS_2023 > 0) or (GQ_2020 > 0 and GQ_ACS_2023 == 0)"
+).explore(
+    column="GQ_ACS_2023", cmap="viridis", tiles="CartoDB positron"
+)
+```
+
+### Merge and Round
+
+This step distributes the 2023 ACS Block Group totals to blocks based on the 2020 proportions (`ACS Total * 2020 Proportion`).
+
+```{python}
+df_alloc = (
+    df_blocks_processed.merge(
+        df_acs_2023[["GEOID_Tract", "GQ_ACS_2023"]], on="GEOID_Tract", how="left"
+    )
+    .fillna({"GQ_ACS_2023": 0})
+    .assign(
+        Target=lambda x: x["GQ_ACS_2023"] * x["GQ_Prop"],
+        GQ_Final_2023=lambda x: x["Target"].round().astype(int),
+    )
+)
+
+display(df_alloc[["GEOID", "GQ_ACS_2023", "Target", "GQ_Final_2023"]].head())
+```
+
+### Quality Check: Sum vs. Total
+
+```{python}
+# 1. Sum the rounded block estimates by Block Group
+bg_check = (
+    df_alloc.groupby("GEOID_Tract")
+    .agg(
+        Sum_Rounded=("GQ_Final_2023", "sum"),
+        Original_Total=("GQ_ACS_2023", "first"),  # The ACS total is constant per Tract
+    )
+    .reset_index()
+)
+
+# 2. Calculate the difference (Positive means we created people, Negative means we lost them)
+bg_check["Diff"] = bg_check["Sum_Rounded"] - bg_check["Original_Total"]
+
+# Filter to only show problematic Tracts
+mismatches = bg_check[bg_check["Diff"] != 0].copy()
+
+# Summary Statistics
+print(f"Total Tracts: {len(bg_check)}")
+print(f"Tracts with Mismatch: {len(mismatches)}")
+print(f"Percentage Mismatched: {round((len(mismatches) / len(bg_check)) * 100, 2)}%")
+print(f"Total Net Population Difference (Sum of Diff): {mismatches['Diff'].sum()}")
+print("-" * 30)
+print("Distribution of Errors:")
+print(mismatches["Diff"].value_counts().sort_index())
+
+# Display a sample of the discrepancies
+print("\nSample of Mismatched Tracts:")
+display(mismatches.head())
+```
+
+## 6. Convert to Centroids and Aggregate to TAZ
+
+Finally, we convert the block geometries to centroids and spatially join them to the TAZ layer to sum the population.
+
+### Load TAZ Data
+
+We load the TAZ shapefile and immediately prepare the block centroids. By chaining `.to_crs()` and `.assign()`, we ensure the centroids are in the correct projection and geometry type in one smooth operation.
+
+```{python}
+# Load TAZ Shapefile
+taz_gdf = gpd.read_file(path_taz)
+
+# Prepare Block Centroids: Filter cols -> Reproject -> Convert to Centroid
+gdf_centroids = (
+    df_alloc[["GEOID", "geometry", "GQ_Final_2023"]]
+    .copy()
+    .to_crs(taz_gdf.crs)
+    .assign(geometry=lambda x: x.geometry.centroid)
+)
+```
+
+### Spatial Join & Aggregate GQ Population
+
+We perform the spatial join and immediately aggregate the results. This avoids creating intermediate variables that clog up memory.
+
+```{python}
+# Define your TAZ ID column name (Update if different)
+taz_id_col = "TAZID"
+
+# Join centroids to TAZs -> Group by TAZ -> Sum Population
+df_taz_totals = (
+    gpd.sjoin(gdf_centroids, taz_gdf, how="inner", predicate="within")
+    .groupby(taz_id_col)["GQ_Final_2023"]
+    .sum()
+    .reset_index(name="GQ_2023")
+)
+
+display(df_taz_totals.head())
+```
+
+## Export Results
+
+Finally, we merge the totals back to the original TAZ geometry (preserving TAZs with zero population), handle missing values, and save the file.
+
+```{python}
+# Merge totals -> Fill NaNs -> Ensure Integer type
+taz_final = (
+    taz_gdf.merge(df_taz_totals, on=taz_id_col, how="left")
+    .fillna({"GQ_2023": 0})
+    .astype({"GQ_2023": int})
+)
+
+# Save to Shapefile
+output_path = os.path.join(
+    output_folder, "groupquarter_censusblocks_2020_centroids.shp"
+)
+taz_final.to_file(output_path)
+
+print(f"Export Complete: {output_path}")
+```
