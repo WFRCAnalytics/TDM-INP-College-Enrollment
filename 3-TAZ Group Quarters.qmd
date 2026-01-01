@@ -1,9 +1,14 @@
 ---
 title: "TAZ Group Quarters Update"
-author: "TDM Group"
-format: html
-editor: visual
-jupyter: python3
+subtitle: Updating Group Quarter Population using 2023 ACS Data
+description: This notebook fetches Group Quarter Population from 2023 ACS 5-Year data at Census Tract and then redistributes it to census block level using Group Quarter Distribution from 2020 Decennial Census data.
+author:
+ - name: Pukar Bhandari
+   email: pukar.bhandari@wfrc.utah.gov
+   affiliation:
+     - name: Wasatch Front Regional Council
+       url: "https://wfrc.utah.gov/"
+date: "2025-12-31"
 ---
 
 ## 1. Libraries and Setup
