@@ -319,6 +319,158 @@ if enrollment_frames:
     print(df_fall_enrollment)
 ```
 
+```{python}
+# --- Fetch & Pivot Fall Enrollment (Campus / Non-Online) ---
+# Strategy: Download EF<Year>D (Distance Education) which contains both
+# "Grand Total" and "Exclusively Distance Education" in the same file for 2012+.
+# For pre-2012, assume 100% Campus.
+
+enrollment_frames = []
+base_url = "https://nces.ed.gov/ipeds/datacenter/data"
+
+print("Fetching Fall Enrollment (Campus Only)...")
+
+for year in range(1997, 2024):
+    try:
+        # --- Pre-2012: No Distance Ed Data (Assume All Campus) ---
+        if year < 2012:
+            file_tag = f"EF{year}A"
+            zip_url = f"{base_url}/{file_tag}.zip"
+
+            response = requests.get(zip_url, timeout=30)
+            response.raise_for_status()
+
+            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][
+                    0
+                ]
+                with z.open(csv_filename) as f:
+                    df = pd.read_csv(f, encoding="latin1", low_memory=False)
+
+            df.columns = df.columns.str.upper()
+
+            # Determine Total
+            if "EFTOTLT" in df.columns:
+                df["Campus_Total"] = df["EFTOTLT"]
+            elif "EFRACE24" in df.columns:
+                df["Campus_Total"] = df["EFRACE24"]
+            elif "EFRACE15" in df.columns:
+                df["Campus_Total"] = df["EFRACE15"] + df["EFRACE16"]
+            else:
+                continue
+
+        # --- 2012+: Use EF<Year>D (Distance Education) File ---
+        else:
+            # The 'A' file often splits data. The 'D' file (EF<Year>D) focuses
+            # specifically on Distance Education counts and usually has the cleanest totals.
+            # However, sometimes it's EF<Year>A_DIST. We try the standard A file first
+            # but look for the specific Distance Ed variables.
+
+            # Note: In recent IPEDS, DE data is inside the main EF<Year>A zip
+            # but sometimes in a separate CSV inside that zip, or a separate download.
+            # We will try the specific _DIST download first for safety.
+
+            # Attempt 1: EF<Year>A_DIST (Common for 2012-2019)
+            file_tag = f"EF{year}A_DIST"
+            # In later years (2020+), it might just be inside EF<Year>A.
+            # Let's try the specific DIST file first.
+            zip_url = f"{base_url}/{file_tag}.zip"
+
+            try:
+                response = requests.get(zip_url, timeout=30)
+                if response.status_code != 200:
+                    # Fallback to standard EF<Year>A if _DIST doesn't exist
+                    zip_url = f"{base_url}/EF{year}A.zip"
+                    response = requests.get(zip_url, timeout=30)
+
+                response.raise_for_status()
+
+                with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                    # Look for csv
+                    csv_names = [f for f in z.namelist() if f.lower().endswith(".csv")]
+                    # Prioritize one with "dist" in name if multiple exist
+                    dist_csv = next(
+                        (f for f in csv_names if "dist" in f.lower()), csv_names[0]
+                    )
+
+                    with z.open(dist_csv) as f:
+                        df = pd.read_csv(f, encoding="latin1", low_memory=False)
+
+                df.columns = df.columns.str.upper()
+
+                # Variable Mapping for 2012+
+                # EFDEEX = Exclusively Distance Education (All Students)
+                # EFTEUG = Total Undergraduate (if split)
+                # EFTOTLT = Grand Total (if available)
+
+                # We need "Grand Total" and "Exclusive DE Total"
+
+                # 1. Find Grand Total Variable in this file
+                if "EFTOTLT" in df.columns:
+                    total_col = "EFTOTLT"
+                elif "EFDETOT" in df.columns:  # Total enrollment in DE file
+                    total_col = "EFDETOT"
+                else:
+                    # If total isn't here, we might need to merge.
+                    # But usually EF...DIST files have the total col for calc purposes.
+                    print(f"Skipping {year}: No total col in DIST file")
+                    continue
+
+                # 2. Find Exclusive DE Variable
+                if "EFDEEX" in df.columns:
+                    de_col = "EFDEEX"  # Total Exclusive
+                elif "EFDEEX1" in df.columns and "EFDEEX2" in df.columns:
+                    # Sum Undergrad (1) + Grad (2)
+                    df["EFDEEX"] = df["EFDEEX1"].fillna(0) + df["EFDEEX2"].fillna(0)
+                    de_col = "EFDEEX"
+                else:
+                    de_col = None
+
+                if de_col:
+                    # Calculate Campus
+                    df["Campus_Total"] = df[total_col] - df[de_col]
+                else:
+                    # Fallback: Assume 0 DE if variable missing (unlikely for _DIST file)
+                    df["Campus_Total"] = df[total_col]
+
+            except Exception as e:
+                print(f"DL Error {year}: {e}")
+                continue
+
+        # --- Filter & Aggregate ---
+        mask = df["UNITID"].isin(id_map.keys())
+        df_filtered = (
+            df.loc[mask, ["UNITID", "Campus_Total"]]
+            .groupby("UNITID")["Campus_Total"]
+            .max()  # Max helps if there are duplicate rows (e.g. by race)
+            .reset_index()
+        )
+
+        # Safety Check: Ensure no negative numbers
+        # If Exclusive DE > Total (data error), clip to 0
+        df_filtered.loc[df_filtered["Campus_Total"] < 0, "Campus_Total"] = 0
+
+        df_filtered["Year"] = year
+        enrollment_frames.append(df_filtered)
+        print(f"{year}", end=" ")
+
+    except Exception as e:
+        pass
+
+# --- Pivot and Output ---
+print("\nProcessing Complete.")
+if enrollment_frames:
+    df_campus_only = (
+        pd.concat(enrollment_frames)
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="Campus_Total", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    print("\n--- Fall Enrollment (Campus / Non-Online Only) ---")
+    print(df_campus_only)
+```
+
 ### Full-Time Equivalent (FTE)
 
 We use `level_of_study=99` to fetch the total FTE directly, avoiding the need to sum undergraduate and graduate rows.
@@ -503,6 +655,13 @@ if "df_fall_enrollment" in locals():
     print(f"Saved Fall Enrollment to: {enrollment_path.absolute()}")
 else:
     print("df_fall_enrollment not found. Skipping export.")
+
+# 2. Export Non-Online Fall Enrollment
+if "df_non_online" in locals():
+    # Naming it "Campus_Enrollment" to distinguish from Total
+    enrollment_path = output_dir / "Fall_Enrollment_CampusOnly_1997_2023.csv"
+    df_campus_only.to_csv(enrollment_path)
+    print(f"Saved Non-Online Enrollment to: {enrollment_path.absolute()}")
 
 # 3. Export Full-Time Equivalent (FTE)
 if "df_fte" in locals():
