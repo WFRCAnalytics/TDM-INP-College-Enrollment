@@ -246,7 +246,8 @@ print(f"Configuration loaded. Raw data will be saved to: {raw_data_dir.absolute(
 
 Read more at https://educationdata.urban.org/documentation/colleges.html for API documentation.
 
-### Fall Enrollment (Headcount)
+### Fall Enrollment
+
 We apply `99` (Total) filters to all available dimensions found in the codebook (`sex`, `race`, `ftpt`, `degree_seeking`, `class_level`) to ensure we receive the single grand total row.
 
 ```{python}
@@ -406,6 +407,85 @@ if fte_frames:
     print(df_fte)
 ```
 
+### 12-Month Unduplicated Headcount (E12)
+
+```{python}
+# --- Fetch & Pivot 12-Month Unduplicated Headcount (EFFY) ---
+effy_frames = []
+base_url = "https://nces.ed.gov/ipeds/datacenter/data"
+
+print("Fetching 12-Month Unduplicated Headcount...")
+
+# Loop from 1997 to 2024
+# Note: EFFY files usually report for the *previous* academic year,
+# but IPEDS labels the file by the collection year.
+for year in range(1997, 2025):
+    file_tag = f"EFFY{year}"
+    zip_url = f"{base_url}/{file_tag}.zip"
+
+    try:
+        # 1. Download
+        response = requests.get(zip_url, timeout=30)
+        response.raise_for_status()
+
+        # 2. Extract
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+            csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
+            z.extract(csv_filename, path=raw_data_dir)
+            local_csv_path = raw_data_dir / csv_filename
+
+        # 3. Read
+        df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
+        df_year.columns = df_year.columns.str.upper()
+
+        # 4. Determine Variable (EFYTOTLT = Grand Total 12-Month Enrollment)
+        # Variable names have shifted slightly over decades
+        if "EFYTOTLT" in df_year.columns:
+            df_year["Headcount_12M"] = df_year["EFYTOTLT"]
+        elif "EFYTOTL" in df_year.columns:
+            df_year["Headcount_12M"] = df_year["EFYTOTL"]
+        # Fallback for older files: Sum of Level of Study (Undergrad + Grad)
+        elif "EFYUNDER" in df_year.columns and "EFYGRAD" in df_year.columns:
+            # Fillna(0) is critical here as some schools may lack grad programs
+            df_year["Headcount_12M"] = df_year["EFYUNDER"].fillna(0) + df_year[
+                "EFYGRAD"
+            ].fillna(0)
+        else:
+            # If we can't find a total, skip this year
+            continue
+
+        # 5. Filter and Aggregation
+        mask = df_year["UNITID"].isin(id_map.keys())
+        df_filtered = (
+            df_year.loc[mask, ["UNITID", "Headcount_12M"]]
+            .groupby("UNITID")["Headcount_12M"]
+            .max()  # Max handles cases where data might be disaggregated by race/gender rows
+            .reset_index()
+        )
+
+        df_filtered["Year"] = year
+        effy_frames.append(df_filtered)
+        print(f"{year}", end=" ")
+
+    except Exception:
+        pass
+
+# 6. Pivot and Output
+print("\nProcessing Complete.")
+if effy_frames:
+    df_effy = (
+        pd.concat(effy_frames)
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(
+            index="Year", columns="Inst", values="Headcount_12M", aggfunc="sum"
+        )
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    print("\n--- 12-Month Unduplicated Headcount (E12) ---")
+    print(df_effy)
+```
+
 # Export
 
 ```{python}
@@ -431,4 +511,12 @@ if "df_fte" in locals():
     print(f"Saved FTE to: {fte_path.absolute()}")
 else:
     print("df_fte not found. Skipping export.")
+
+# 4. Export 12-Month Unduplicated Headcount
+if "df_effy" in locals():
+    effy_path = output_dir / "Headcount_12Month_1997_2023.csv"
+    df_effy.to_csv(effy_path)
+    print(f"Saved 12-Month Headcount to: {effy_path.absolute()}")
+else:
+    print("df_effy not found. Skipping export.")
 ```
