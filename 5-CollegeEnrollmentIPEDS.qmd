@@ -256,8 +256,8 @@ base_url = "https://nces.ed.gov/ipeds/datacenter/data"
 
 print("Fetching Fall Enrollment Data...")
 
-# Loop from 1997 to 2023
-for year in range(1997, 2024):
+# Loop from 1997 to 2024
+for year in range(1997, 2025):
     file_tag = f"EF{year}A"
     zip_url = f"{base_url}/{file_tag}.zip"
 
@@ -329,8 +329,8 @@ base_url = "https://nces.ed.gov/ipeds/datacenter/data"
 
 print("Fetching FTE Data...")
 
-# Loop from 1997 to 2023
-for year in range(1997, 2024):
+# Loop from 1997 to 2024
+for year in range(1997, 2025):
     file_tag = f"EFIA{year}"
     zip_url = f"{base_url}/{file_tag}.zip"
 
@@ -404,4 +404,31 @@ if fte_frames:
     )
     print("\n--- Full-Time Equivalent (FTE) ---")
     print(df_fte)
+```
+
+# Export
+
+```{python}
+# --- Export Data to CSV ---
+from pathlib import Path
+
+# 1. Define and Create Output Directory
+output_dir = Path("intermediate")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# 2. Export Fall Enrollment (Headcount)
+if "df_fall_enrollment" in locals():
+    enrollment_path = output_dir / "Fall_Enrollment_1997_2023.csv"
+    df_fall_enrollment.to_csv(enrollment_path)
+    print(f"Saved Fall Enrollment to: {enrollment_path.absolute()}")
+else:
+    print("df_fall_enrollment not found. Skipping export.")
+
+# 3. Export Full-Time Equivalent (FTE)
+if "df_fte" in locals():
+    fte_path = output_dir / "FTE_Enrollment_1997_2023.csv"
+    df_fte.to_csv(fte_path)
+    print(f"Saved FTE to: {fte_path.absolute()}")
+else:
+    print("df_fte not found. Skipping export.")
 ```

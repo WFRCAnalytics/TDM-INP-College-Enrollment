@@ -1,0 +1,467 @@
+---
+title: "College Campus Disaggregation"
+subtitle: "Disaggregating university enrollment to TAZ level using StreetLight data"
+description: "This workflow distributes college enrollment utils::data (Zip-level or Regional) to Traffic Analysis Zones (TAZs). It accounts for fixed Group Quarter populations (dorms) and distributes the remaining commuter population based on StreetLight origin-destination trip patterns."
+author:
+ - name: Pukar Bhandari
+   email: pukar.bhandari@wfrc.utah.gov
+   affiliation:
+     - name: Wasatch Front Regional Council
+       url: "https://wfrc.utah.gov/"
+date: "2025-01-01"
+---
+
+# Setup & Configuration
+
+We begin by establishing the computational environment. This section loads the necessary libraries for spatial analysis (`sf`, `mapview`) and data manipulation (`tidyverse`).
+
+Crucially, we define a central **configuration list (`CONSTANTS` and `PATHS`)**. This practice avoids "magic numbers" (hardcoded values hidden deep in the code) and makes the script robust. If the TAZ shapefile name changes next year, or if the assumption about dorm distance needs adjusting, you only need to change it here.
+
+* **`min_hh_threshold`**: We ignore TAZs with fewer than 24 households to prevent distributing students to industrial or unpopulated zones.
+* **`gq_dist_threshold`**: When assigning census blocks (dorms) to campuses, we only consider blocks within 4,000 feet of a campus boundary to ensure accuracy.
+* **`magic_fill_value`**: A specific fallback weight (approx. 0.74) used when StreetLight data is missing for a specific Zip code, ensuring no enrollment data is lost due to gaps in the t
+
+```{r setup}
+# | message: false
+# | warning: false
+
+library(tidyverse)
+library(sf)
+library(mapview)
+library(kableExtra)
+
+# --- CONFIGURATION ---
+CONSTANTS <- list(
+  crs_projected = 26912, # NAD83 / Utah Central (EPSG:26912)
+  min_hh_threshold = 24, # TAZs with fewer HHs are ignored for distribution
+  gq_dist_threshold = 4000, # Max distance (ft) to snap dorm blocks to campus
+  magic_fill_value = 0.7435897 # Fallback weight for Zips with no StreetLight data
+)
+
+PATHS <- list(
+  # Raw Input Data
+  se_data = "data/SE_2023.csv",
+  taz_shp = "data/TAZ/WFv1000_TAZ.shp",
+  sl_taz_shp = "data/StreetLight_TAZ_2021_09_22/StreetLight_TAZ_2021_09_22.shp",
+  college_key = "data/College_to_SL_COTAZID.csv",
+
+  # Intermediate Input Data
+  block_shp = "intermediate/groupquarter_censusblocks_2020.shp",
+  zip_enrollment = "intermediate/TotEnrolByZipByCollege.csv",
+  zip_shp = "intermediate/ugrc_zip_codes.shp",
+  sl_trips = "intermediate/dfCollegeDataOD.csv",
+
+  # Output
+  output_csv = "results/collegeHomeLocations.csv"
+)
+
+# Control Totals for Private Schools (Regional Level)
+# These schools (BYU, Ensign, Westminster) do not have granular Zip-level enrollment data.
+# Instead, we rely on a single "Control Total" for the entire region.
+PRIVATE_CONTROLS <- dplyr::tibble(
+  COLLEGE = c("BYU", "ENSIGN", "WESTMIN"),
+  Control_Total = c(34300, 1950, 2200)
+)
+```
+
+# Data Loading & Preprocessing
+
+## Identifying Valid Residential Zones (TAZs)
+
+Before processing trips, we need to define where students could possibly live. We load the master TAZ shapefile and join it with Socio-Economic (SE) data.
+
+We calculate a `studentRatio` for each TAZ: $$ \text{Student Ratio} = \frac{\text{Total Households}}{\text{Total Households} + \text{Total Employment}} $$
+
+This ratio acts as a weighting factor later. It assumes that a trip originating from a TAZ with high employment (like a business park) is less likely to be a "home-based" student trip than a trip from a purely residential TAZ. We filter out any TAZ with fewer than `r CONSTANTS$min_hh_threshold` households.
+
+```{r}
+#| message: false
+
+# Load SE Data and calculate the residential/student weight
+se_data <- readr::read_csv(PATHS$se_data) |>
+  dplyr::rename(TAZID = ";TAZID") |>
+  dplyr::filter(TOTHH > CONSTANTS$min_hh_threshold) |>
+  dplyr::mutate(studentRatio = TOTHH / (TOTEMP + TOTHH))
+
+# Load TAZ Polygons (Geometry)
+taz_poly <- sf::st_read(PATHS$taz_shp, quiet = TRUE) |>
+  dplyr::select(TAZID) |>
+  sf::st_transform(CONSTANTS$crs_projected)
+
+# Define "Valid TAZs" (Geometry + SE Data for valid residential zones)
+valid_tazs <- taz_poly |>
+  dplyr::inner_join(se_data, by = "TAZID") |>
+  dplyr::select(TAZID, studentRatio)
+
+# Validation Output
+print(paste("Original TAZ Count:", nrow(taz_poly)))
+print(paste("Filtered (Valid) TAZ Count:", nrow(valid_tazs)))
+```
+
+## Processing College & StreetLight Geometries
+
+We use the StreetLight TAZ shapefile for two distinct purposes:
+
+1. **Campus Polygons:** We define the physical boundaries of the 5 main universities (`sl_college_poly`). This allows us to spatially "snap" nearby dorms to the correct school.
+2. **Trip Origins:** We generate centroids for all StreetLight zones (`sl_centroids_valid`). These points represent the start/end locations for the trip data we will process later.
+
+```{r}
+# Load raw StreetLight Polygons
+sl_taz_poly <- sf::st_read(PATHS$sl_taz_shp, quiet = TRUE) |>
+  dplyr::select(SA_TAZID, SL_COTAZID) |>
+  sf::st_transform(CONSTANTS$crs_projected)
+
+# 1. Define College Campus Polygons
+#    Filter to the 5 main campuses relevant to this study
+sl_college_poly <- readr::read_csv(PATHS$college_key) |>
+  dplyr::inner_join(sl_taz_poly, by = "SL_COTAZID") |>
+  sf::st_as_sf() |>
+  dplyr::filter(
+    COLLEGE %in% c("WSU_MAIN", "UOFU_MAIN", "UVU_MAIN", "BYU", 'WESTMIN')
+  )
+
+# 2. Define Valid SL Centroids (for Trip Distribution)
+#    Convert SL polygons to centroids and join with our "Valid TAZ" list.
+#    This ensures we only consider trips originating from residential areas.
+sl_centroids_valid <- sl_taz_poly |>
+  sf::st_centroid() |>
+  dplyr::inner_join(
+    sf::st_drop_geometry(valid_tazs),
+    by = c("SA_TAZID" = "TAZID")
+  )
+```
+
+## Assigning Group Quarters (Dorms)
+
+Students living in dormitories (Group Quarters or GQ) are a "Fixed Population"—we know exactly where they are. We load Census Block data containing student GQ counts.
+
+Using a nearest-neighbor spatial join, we assign each census block to the closest university campus. To avoid false positives (e.g., a nursing home being misidentified as a dorm), we enforce a strict distance threshold of `r CONSTANTS$gq_dist_threshold` feet. Blocks further away are dropped.
+
+```{r}
+# Load Block Data (Points representing census blocks with students)
+block_polys <- sf::st_read(PATHS$block_shp, quiet = TRUE) |>
+  dplyr::select(geoid20, gq_student) |>
+  sf::st_transform(CONSTANTS$crs_projected) |>
+  sf::st_centroid()
+```
+
+```{r}
+# Find the nearest main campus for every block
+nearest_idx <- sf::st_nearest_feature(block_polys, sl_college_poly)
+
+# Assign campus, calculate distance, and filter invalid matches
+block_gq_assigned <- block_polys |>
+  dplyr::mutate(
+    nearest_geom = sf::st_geometry(sl_college_poly[nearest_idx, ]),
+    COLLEGE = sl_college_poly$COLLEGE[nearest_idx],
+    dist_ft = as.numeric(sf::st_distance(
+      geometry,
+      nearest_geom,
+      by_element = TRUE
+    ))
+  ) |>
+  dplyr::filter(dist_ft < CONSTANTS$gq_dist_threshold) |>
+  dplyr::select(COLLEGE, gq_student)
+```
+
+```{r}
+# Aggregate these GQ totals to the TAZ level
+# (These will be added back to the final dataset at the very end)
+taz_gq_totals <- sf::st_join(block_gq_assigned, taz_poly, join = st_within) |>
+  sf::st_drop_geometry() |>
+  dplyr::group_by(TAZID, COLLEGE) |>
+  dplyr::summarize(gq_student = sum(gq_student), .groups = "drop")
+```
+
+## Creating the Trip Probability Grid (StreetLight)
+
+This step builds the "Probability Map" for where commuter students live. We load the raw Origin-Destination (OD) trip data from StreetLight.
+
+We filter for **Mid-Day Weekday** trips (9am - 3pm, Tue-Thu), which are most representative of students attending classes. We then weight these trips using the `studentRatio` calculated earlier. This down-weights trips from commercial zones and up-weights trips from residential neighborhoods.
+
+```{r}
+# Load and process raw trip data
+sl_trips <- readr::read_csv(PATHS$sl_trips) |>
+  dplyr::filter(
+    day_type == "1: Weekday (Tu-Th)",
+    day_part == "3: Mid-Day (9am-3pm)"
+  ) |>
+  # Join destination college names (identifying which school the trip went to)
+  dplyr::inner_join(
+    readr::read_csv(PATHS$college_key) |>
+      dplyr::filter(COLLEGE != "UVU_GENEVA"),
+    by = c("destination_zone_name" = "SL_COTAZID")
+  ) |>
+  dplyr::rename(D_COLLEGE = COLLEGE) |>
+  # Sum total trips by Origin Zone -> Destination College
+  dplyr::group_by(origin_zone_name, D_COLLEGE) |>
+  dplyr::summarize(
+    trip_vol = sum(o_d_traffic_calibrated_trip_volume),
+    .groups = "drop"
+  ) |>
+  # Join to SL centroids to attach TAZ IDs and Student Ratios
+  dplyr::inner_join(
+    sl_centroids_valid,
+    by = c("origin_zone_name" = "SL_COTAZID")
+  ) |>
+  # Apply the Student Ratio weighting
+  dplyr::mutate(weighted_trips = trip_vol * studentRatio) |>
+  dplyr::select(SA_TAZID, origin_zone_name, D_COLLEGE, weighted_trips)
+```
+
+# Public School Disaggregation
+
+For public universities, we have enrollment data available at the **Zip Code** level. Our strategy is to perform a constrained distribution:
+
+1. **Calculate Net Demand:** For each Zip Code, we take the Total Enrollment and subtract the known Dorm Students (`gq_in_zip`).
+2. **Handle Overflows:** If a Zip Code has more dorm students than total enrollment (due to data reporting mismatches), we assume the "Commuter Demand" is zero (`pmax(0, ...)`).
+3. **Distribute:** We take the remaining students (Net Demand) and spread them across the TAZs *inside* that Zip Code. The spread is not even; it is proportional to the weighted StreetLight trips we calculated in Step 2.4.
+
+## Preparing Zip Code Geometry & Enrollment
+
+We load the Zip Code boundaries and the enrollment data. We pre-aggregate the enrollment CSV to ensuring uniqueness (one row per Zip/College) to prevent join errors later.
+
+```{r}
+# 1. Load Zip Code Boundaries
+zip_poly <- sf::st_read(
+  PATHS$zip_shp,
+  query = "SELECT zip5 FROM ugrc_zip_codes WHERE countynbr IN ('18', '2', '25', '6', '29', '20')",
+  quiet = TRUE
+) |>
+  sf::st_transform(CONSTANTS$crs_projected) |>
+  dplyr::mutate(zip5 = as.numeric(zip5))
+```
+
+```{r}
+# 2. Prepare Enrollment Data
+#    Summing by Zip/College ensures uniqueness before joining geometry.
+zip_enroll <- readr::read_csv(PATHS$zip_enrollment) |>
+  dplyr::group_by(ZIPCODE, COLLEGE) |>
+  dplyr::summarize(TotEnrol = sum(TotEnrol), .groups = "drop") |>
+  dplyr::inner_join(zip_poly, by = c("ZIPCODE" = "zip5")) |>
+  sf::st_as_sf()
+```
+
+## Calculating Net Demand
+
+Here we spatially join our assigned dorm blocks to the Zip Codes to determine how many "Fixed" students are in each Zip. We subtract this from the total enrollment to find the number of "Commuter" students we need to distribute.
+
+```{r}
+# 3. Calculate GQ (Dorm) students per Zip Code
+block_gq_per_zip <- sf::st_join(
+  block_gq_assigned,
+  zip_poly,
+  join = st_within
+) |>
+  sf::st_drop_geometry() |>
+  dplyr::group_by(zip5, COLLEGE) |>
+  dplyr::summarize(gq_in_zip = sum(gq_student), .groups = "drop")
+```
+
+```{r}
+# 4. Calculate Net Demand (Total Enrollment - Dorms)
+public_demand <- zip_enroll |>
+  sf::st_drop_geometry() |>
+  dplyr::left_join(block_gq_per_zip, by = c("ZIPCODE" = "zip5", "COLLEGE")) |>
+  dplyr::mutate(
+    gq_in_zip = tidyr::replace_na(gq_in_zip, 0),
+    # Use pmax(0) to ensure we don't get negative students if Dorms > Enrollment
+    net_demand = pmax(0, TotEnrol - gq_in_zip)
+  ) |>
+  dplyr::filter(!COLLEGE %in% PRIVATE_CONTROLS$COLLEGE)
+```
+
+## Distributing Commuters to TAZs
+
+Finally, we apply the StreetLight trip distribution. We figure out which TAZs are in which Zip Code, calculate their share of the total trips in that Zip, and assign the Net Demand accordingly.
+
+```{r}
+# 5. Distribute Net Demand to TAZs
+public_distribution <- sl_trips |>
+  dplyr::filter(!D_COLLEGE %in% PRIVATE_CONTROLS$COLLEGE) |>
+  # Join on unique SL ID (origin_zone_name) to link trips to spatial location
+  dplyr::inner_join(
+    sl_centroids_valid,
+    by = c("origin_zone_name" = "SL_COTAZID", "SA_TAZID")
+  ) |>
+  sf::st_as_sf() |>
+  # Determine which Zip Code each Trip Origin falls into
+  sf::st_join(zip_poly, join = st_within) |>
+  sf::st_drop_geometry() |>
+  # Fill missing SL weights with a constant to prevent division by zero/NA
+  dplyr::mutate(
+    weighted_trips = tidyr::replace_na(
+      weighted_trips,
+      CONSTANTS$magic_fill_value
+    )
+  ) |>
+  # Calculate the "Share" of trips for each TAZ within its specific Zip Code
+  dplyr::group_by(zip5, D_COLLEGE) |>
+  dplyr::mutate(share = weighted_trips / sum(weighted_trips)) |>
+  dplyr::ungroup() |>
+  # Join the Net Demand calculated above
+  dplyr::inner_join(
+    public_demand,
+    by = c("zip5" = "ZIPCODE", "D_COLLEGE" = "COLLEGE")
+    # relationship = "many-to-one"
+  ) |>
+  # Final Calculation: Zip Demand * TAZ Share
+  dplyr::mutate(distributed_students = net_demand * share) |>
+  dplyr::select(SA_TAZID, COLLEGE = D_COLLEGE, distributed_students)
+```
+
+## Validation: Public Schools
+
+We perform a quick check to ensure the distributed student counts roughly match the input net demand. Small discrepancies are expected due to Zip Codes with enrollment but no corresponding StreetLight trips (lost data).
+
+```{r}
+#| eval: true
+public_check <- public_distribution |>
+  dplyr::group_by(COLLEGE) |>
+  dplyr::summarize(Distributed_Total = sum(distributed_students)) |>
+  dplyr::left_join(
+    public_demand |>
+      dplyr::group_by(COLLEGE) |>
+      dplyr::summarize(Input_Net_Demand = sum(net_demand)),
+    by = join_by(COLLEGE)
+  )
+
+print(public_check)
+```
+
+::: {.callout-note}
+This is used to help double-check... but isn't perfect because within the process some zip level data is disregarded (i.e. no SL trips existed within that zip code).
+:::
+
+In order to verify that this is just "Lost Zips" and not a code bug, we can run this diagnostic snippet. It will show you exactly which Zip Codes had demand but zero StreetLight trips.
+
+```{r}
+# 1. Identify which Zips actually have StreetLight trips
+#    (We reconstruct the spatial join here since it was dropped in the final output)
+zips_with_trips <- sl_trips |>
+  filter(!D_COLLEGE %in% PRIVATE_CONTROLS$COLLEGE) |>
+  # Re-join to spatial location
+  inner_join(
+    sl_centroids_valid,
+    by = c("origin_zone_name" = "SL_COTAZID", "SA_TAZID")
+  ) |>
+  st_as_sf() |>
+  st_join(zip_poly, join = st_within) |>
+  st_drop_geometry() |>
+  # Get unique list of Zip/College pairs that have at least one trip
+  distinct(zip5, D_COLLEGE) |>
+  rename(ZIPCODE = zip5, COLLEGE = D_COLLEGE)
+
+# 2. Find Demand that has NO matching trips
+lost_zips <- public_demand |>
+  # Keep rows where the Zip/College pair is NOT in the "zips_with_trips" list
+  anti_join(zips_with_trips, by = c("ZIPCODE", "COLLEGE")) |>
+  filter(net_demand > 0)
+
+# 3. Validation
+print(paste("Total Lost Students:", sum(lost_zips$net_demand)))
+
+# See which Zips were lost (mostly small rural zips or low enrollment counts)
+head(lost_zips)
+```
+
+# Private School Disaggregation
+
+For private universities (BYU, Ensign, Westminster), we do not have granular Zip Code data. Instead, we perform a **Regional Distribution**.
+
+1. **Calculate Net Demand:** We start with the regional `Control Total` for the school and subtract the total number of Dorm Students found in Step 2.3.
+2. **Distribute:** We spread the remaining students across **all** valid TAZs in the entire region. The spread is proportional to the weighted StreetLight trips, but unlike public schools, it is not constrained by Zip Code boundaries.
+
+```{r}
+# 1. Calculate Net Demand (Region Total - Total Dorms)
+private_demand <- PRIVATE_CONTROLS |>
+  dplyr::left_join(
+    taz_gq_totals |>
+      dplyr::group_by(COLLEGE) |>
+      dplyr::summarize(total_gq = sum(gq_student)),
+    by = "COLLEGE"
+  ) |>
+  dplyr::mutate(
+    total_gq = tidyr::replace_na(total_gq, 0),
+    net_demand = Control_Total - total_gq
+  )
+```
+
+```{r}
+# 2. Distribute based on Region-wide Trip Shares
+private_distribution <- sl_trips |>
+  dplyr::filter(D_COLLEGE %in% PRIVATE_CONTROLS$COLLEGE) |>
+  dplyr::group_by(D_COLLEGE) |>
+  # Here, 'sum(weighted_trips)' sums across the entire region, not just a Zip
+  dplyr::mutate(share = weighted_trips / sum(weighted_trips)) |>
+  dplyr::ungroup() |>
+  dplyr::inner_join(private_demand, by = c("D_COLLEGE" = "COLLEGE")) |>
+  dplyr::mutate(distributed_students = net_demand * share) |>
+  dplyr::select(SA_TAZID, COLLEGE = D_COLLEGE, distributed_students)
+```
+
+## Validation: Private Schools
+
+Since the distribution is regional and not constrained by missing Zip data, the input and output totals should match exactly.
+
+```{r}
+#| eval: true
+private_check <- private_distribution |>
+  dplyr::group_by(COLLEGE) |>
+  dplyr::summarize(Distributed_Total = sum(distributed_students)) |>
+  dplyr::left_join(
+    private_demand |>
+      dplyr::select(COLLEGE, Target_Net_Demand = net_demand),
+    by = join_by(COLLEGE)
+  )
+
+print(private_check)
+```
+
+# Final Compilation & Export
+
+In this final step, we synthesize the results.
+
+1. **Combine:** We merge the distributed "Commuter" students (from both Public and Private workflows).
+2. **Add Dorms:** We join the "Fixed" Group Quarter students (calculated in Step 2.3) back to their respective TAZs.
+3. **Format:** We pivot the data into a "Wide" format (TAZ rows x College columns), creating the final matrix required for the travel demand model.
+
+```{r}
+# Combine Public and Private distributions
+final_long_data <- dplyr::bind_rows(
+  public_distribution,
+  private_distribution
+) |>
+  # Add back the fixed GQ (dorm) students to their specific TAZs
+  dplyr::full_join(taz_gq_totals, by = c("SA_TAZID" = "TAZID", "COLLEGE")) |>
+  dplyr::mutate(
+    distributed_students = tidyr::replace_na(distributed_students, 0),
+    gq_student = tidyr::replace_na(gq_student, 0),
+    # Total Students = Commuters + Dorm Residents
+    total_students = distributed_students + gq_student
+  )
+```
+
+```{r}
+# Pivot to Wide Format (One column per college)
+final_output <- final_long_data |>
+  dplyr::group_by(SA_TAZID, COLLEGE) |>
+  dplyr::summarize(
+    total_students = round(sum(total_students), 0),
+    .groups = "drop"
+  ) |>
+  tidyr::pivot_wider(
+    names_from = COLLEGE,
+    values_from = total_students,
+    values_fill = 0
+  ) |>
+  dplyr::rename(";Z" = "SA_TAZID")
+
+# Preview the final table
+utils::head(final_output) |> kableExtra::kable()
+```
+
+```{r}
+# Export
+readr::write_csv(final_output, PATHS$output_csv, append = FALSE)
+```
