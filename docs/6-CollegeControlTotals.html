@@ -61,7 +61,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="site_libs/quarto-nav/quarto-nav.js"></script>
 <script src="site_libs/quarto-nav/headroom.min.js"></script>
 <script src="site_libs/clipboard/clipboard.min.js"></script>
 <script src="site_libs/quarto-search/autocomplete.umd.js"></script>
@@ -111,6 +111,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
 
 
 </head>
@@ -393,7 +396,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1 data-number="1"><span class="header-section-number">1</span> Environment Setup</h1>
 <section id="import-standard-libraries" class="level2" data-number="1.1">
 <h2 data-number="1.1" class="anchored" data-anchor-id="import-standard-libraries"><span class="header-section-number">1.1</span> Import Standard Libraries</h2>
-<div id="b4c84610" class="cell" data-execution_count="1">
+<div id="561a9c83" class="cell" data-execution_count="1">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -411,7 +414,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="integrated-postsecondary-education-data-system" class="level3">
 <h3 class="anchored" data-anchor-id="integrated-postsecondary-education-data-system">Integrated Postsecondary Education Data System</h3>
-<div id="84d588aa" class="cell" data-execution_count="2">
+<div id="e869ea2b" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Output from 5-CollegeEnrollmentIPEDS.qmd</span></span>
@@ -421,7 +424,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="regional-transportation-planning-excel" class="level3">
 <h3 class="anchored" data-anchor-id="regional-transportation-planning-excel">2019 Regional Transportation Planning Excel</h3>
-<div id="c0df54b7" class="cell" data-execution_count="3">
+<div id="170c3bec" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Following data is from 2019 RTP, the original source cannot be traced</span></span>
@@ -447,7 +450,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="forecast-kem-c.-gardner-policy-institute" class="level3">
 <h3 class="anchored" data-anchor-id="forecast-kem-c.-gardner-policy-institute">Forecast: Kem C. Gardner Policy Institute</h3>
 <p>The following data was obtained from: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/SchColAgeFS-Dec2022.pdf and converted to excel using https://www.adobe.com/acrobat/online/pdf-to-excel.html tool.</p>
-<div id="4469c01e" class="cell" data-execution_count="4">
+<div id="01cc532b" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Table 1: Utah School-Age and College-Age Population, 2020-2060</span></span>
@@ -488,7 +491,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>).dropna(axis<span class="op">=</span><span class="dv">1</span>, how<span class="op">=</span><span class="st">"all"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="fd5b4f57" class="cell" data-execution_count="5">
+<div id="224ba1f3" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Source: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/2025/11/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx</span></span>
@@ -507,8 +510,407 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    sheet_name<span class="op">=</span><span class="st">"Demographic Detail"</span>,</span>
 <span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    header<span class="op">=</span><span class="dv">3</span>,</span>
 <span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    nrows<span class="op">=</span><span class="dv">1230</span>,</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>).query(<span class="st">"Geography in @wftdm_counties"</span>)[[<span class="st">"Geography"</span>, <span class="st">"Year"</span>, <span class="st">"Population Ages 18-24"</span>]]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>).query(<span class="st">"Geography in @wftdm_counties"</span>)[[<span class="st">"Geography"</span>, <span class="st">"Year"</span>, <span class="st">"Population Ages 18-24"</span>]]</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>(</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    df_gpi_projections.pivot(</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>        index<span class="op">=</span><span class="st">"Year"</span>, columns<span class="op">=</span><span class="st">"Geography"</span>, values<span class="op">=</span><span class="st">"Population Ages 18-24"</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    .rename_axis(<span class="va">None</span>, axis<span class="op">=</span><span class="dv">1</span>)  <span class="co"># Removes the "Geography" label from the columns</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    .reset_index()  <span class="co"># Moves 'Year' from index to the first column</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
+<div class="cell-output cell-output-display" data-execution_count="5">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">Year</th>
+<th data-quarto-table-cell-role="th">Box Elder County</th>
+<th data-quarto-table-cell-role="th">Davis County</th>
+<th data-quarto-table-cell-role="th">Salt Lake County</th>
+<th data-quarto-table-cell-role="th">Utah County</th>
+<th data-quarto-table-cell-role="th">Weber County</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>2025</td>
+<td>6318</td>
+<td>40725</td>
+<td>128297</td>
+<td>134633</td>
+<td>28922</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>2026</td>
+<td>6622</td>
+<td>42638</td>
+<td>130076</td>
+<td>138309</td>
+<td>29686</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">2</th>
+<td>2027</td>
+<td>6834</td>
+<td>43773</td>
+<td>130988</td>
+<td>143351</td>
+<td>30377</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">3</th>
+<td>2028</td>
+<td>6861</td>
+<td>43899</td>
+<td>130400</td>
+<td>146746</td>
+<td>30244</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">4</th>
+<td>2029</td>
+<td>6804</td>
+<td>43794</td>
+<td>128941</td>
+<td>148365</td>
+<td>29955</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">5</th>
+<td>2030</td>
+<td>6760</td>
+<td>43674</td>
+<td>127196</td>
+<td>148883</td>
+<td>29747</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">6</th>
+<td>2031</td>
+<td>6748</td>
+<td>43482</td>
+<td>125496</td>
+<td>148565</td>
+<td>29493</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">7</th>
+<td>2032</td>
+<td>6695</td>
+<td>43243</td>
+<td>123444</td>
+<td>147265</td>
+<td>29101</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">8</th>
+<td>2033</td>
+<td>6685</td>
+<td>42946</td>
+<td>121122</td>
+<td>145320</td>
+<td>28771</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">9</th>
+<td>2034</td>
+<td>6661</td>
+<td>42733</td>
+<td>119286</td>
+<td>143185</td>
+<td>28575</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">10</th>
+<td>2035</td>
+<td>6601</td>
+<td>42263</td>
+<td>117438</td>
+<td>140976</td>
+<td>28301</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">11</th>
+<td>2036</td>
+<td>6552</td>
+<td>41692</td>
+<td>115677</td>
+<td>139143</td>
+<td>28063</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">12</th>
+<td>2037</td>
+<td>6525</td>
+<td>40972</td>
+<td>114307</td>
+<td>137838</td>
+<td>27809</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">13</th>
+<td>2038</td>
+<td>6441</td>
+<td>40127</td>
+<td>112795</td>
+<td>136896</td>
+<td>27517</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">14</th>
+<td>2039</td>
+<td>6277</td>
+<td>38889</td>
+<td>110424</td>
+<td>136200</td>
+<td>27253</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">15</th>
+<td>2040</td>
+<td>6160</td>
+<td>37744</td>
+<td>108515</td>
+<td>135473</td>
+<td>26962</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">16</th>
+<td>2041</td>
+<td>5967</td>
+<td>36451</td>
+<td>106367</td>
+<td>134910</td>
+<td>26503</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">17</th>
+<td>2042</td>
+<td>5911</td>
+<td>35378</td>
+<td>104440</td>
+<td>134885</td>
+<td>26216</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">18</th>
+<td>2043</td>
+<td>5811</td>
+<td>34433</td>
+<td>102547</td>
+<td>135030</td>
+<td>25991</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">19</th>
+<td>2044</td>
+<td>5683</td>
+<td>33562</td>
+<td>100581</td>
+<td>135207</td>
+<td>25792</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">20</th>
+<td>2045</td>
+<td>5581</td>
+<td>32747</td>
+<td>98549</td>
+<td>135282</td>
+<td>25621</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">21</th>
+<td>2046</td>
+<td>5558</td>
+<td>32383</td>
+<td>97432</td>
+<td>135448</td>
+<td>25555</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">22</th>
+<td>2047</td>
+<td>5463</td>
+<td>32089</td>
+<td>96440</td>
+<td>136079</td>
+<td>25501</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">23</th>
+<td>2048</td>
+<td>5468</td>
+<td>32150</td>
+<td>96088</td>
+<td>137328</td>
+<td>25604</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">24</th>
+<td>2049</td>
+<td>5421</td>
+<td>32466</td>
+<td>96199</td>
+<td>139235</td>
+<td>25785</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">25</th>
+<td>2050</td>
+<td>5465</td>
+<td>33063</td>
+<td>97113</td>
+<td>142040</td>
+<td>26060</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">26</th>
+<td>2051</td>
+<td>5518</td>
+<td>33889</td>
+<td>98523</td>
+<td>145749</td>
+<td>26400</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">27</th>
+<td>2052</td>
+<td>5577</td>
+<td>34864</td>
+<td>100221</td>
+<td>150009</td>
+<td>26774</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">28</th>
+<td>2053</td>
+<td>5644</td>
+<td>35919</td>
+<td>102040</td>
+<td>154414</td>
+<td>27165</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">29</th>
+<td>2054</td>
+<td>5720</td>
+<td>36991</td>
+<td>103814</td>
+<td>158533</td>
+<td>27558</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">30</th>
+<td>2055</td>
+<td>5803</td>
+<td>38035</td>
+<td>105449</td>
+<td>162128</td>
+<td>27938</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">31</th>
+<td>2056</td>
+<td>5891</td>
+<td>39019</td>
+<td>106889</td>
+<td>165030</td>
+<td>28295</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">32</th>
+<td>2057</td>
+<td>5982</td>
+<td>39923</td>
+<td>108097</td>
+<td>167135</td>
+<td>28624</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">33</th>
+<td>2058</td>
+<td>6073</td>
+<td>40727</td>
+<td>109051</td>
+<td>168414</td>
+<td>28914</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">34</th>
+<td>2059</td>
+<td>6158</td>
+<td>41422</td>
+<td>109758</td>
+<td>168937</td>
+<td>29159</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">35</th>
+<td>2060</td>
+<td>6234</td>
+<td>42006</td>
+<td>110241</td>
+<td>168867</td>
+<td>29355</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">36</th>
+<td>2061</td>
+<td>6295</td>
+<td>42484</td>
+<td>110556</td>
+<td>168459</td>
+<td>29498</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">37</th>
+<td>2062</td>
+<td>6339</td>
+<td>42848</td>
+<td>110702</td>
+<td>167842</td>
+<td>29586</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">38</th>
+<td>2063</td>
+<td>6365</td>
+<td>43089</td>
+<td>110675</td>
+<td>167111</td>
+<td>29619</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">39</th>
+<td>2064</td>
+<td>6372</td>
+<td>43206</td>
+<td>110481</td>
+<td>166350</td>
+<td>29599</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">40</th>
+<td>2065</td>
+<td>6361</td>
+<td>43200</td>
+<td>110126</td>
+<td>165634</td>
+<td>29530</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
 </div>
 
 
@@ -1106,7 +1508,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb6-135"><a href="#cb6-135" aria-hidden="true" tabindex="-1"></a>    header<span class="op">=</span><span class="dv">3</span>,</span>
 <span id="cb6-136"><a href="#cb6-136" aria-hidden="true" tabindex="-1"></a>    nrows<span class="op">=</span><span class="dv">1230</span>,</span>
 <span id="cb6-137"><a href="#cb6-137" aria-hidden="true" tabindex="-1"></a>).query(<span class="st">"Geography in @wftdm_counties"</span>)[[<span class="st">"Geography"</span>, <span class="st">"Year"</span>, <span class="st">"Population Ages 18-24"</span>]]</span>
-<span id="cb6-138"><a href="#cb6-138" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb6-138"><a href="#cb6-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-139"><a href="#cb6-139" aria-hidden="true" tabindex="-1"></a>(</span>
+<span id="cb6-140"><a href="#cb6-140" aria-hidden="true" tabindex="-1"></a>    df_gpi_projections.pivot(</span>
+<span id="cb6-141"><a href="#cb6-141" aria-hidden="true" tabindex="-1"></a>        index<span class="op">=</span><span class="st">"Year"</span>, columns<span class="op">=</span><span class="st">"Geography"</span>, values<span class="op">=</span><span class="st">"Population Ages 18-24"</span></span>
+<span id="cb6-142"><a href="#cb6-142" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb6-143"><a href="#cb6-143" aria-hidden="true" tabindex="-1"></a>    .rename_axis(<span class="va">None</span>, axis<span class="op">=</span><span class="dv">1</span>)  <span class="co"># Removes the "Geography" label from the columns</span></span>
+<span id="cb6-144"><a href="#cb6-144" aria-hidden="true" tabindex="-1"></a>    .reset_index()  <span class="co"># Moves 'Year' from index to the first column</span></span>
+<span id="cb6-145"><a href="#cb6-145" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb6-146"><a href="#cb6-146" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 </code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->

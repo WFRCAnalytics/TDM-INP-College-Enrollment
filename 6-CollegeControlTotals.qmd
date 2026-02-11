@@ -123,4 +123,12 @@ df_gpi_projections = pd.read_excel(
     header=3,
     nrows=1230,
 ).query("Geography in @wftdm_counties")[["Geography", "Year", "Population Ages 18-24"]]
+
+(
+    df_gpi_projections.pivot(
+        index="Year", columns="Geography", values="Population Ages 18-24"
+    )
+    .rename_axis(None, axis=1)  # Removes the "Geography" label from the columns
+    .reset_index()  # Moves 'Year' from index to the first column
+)
 ```
