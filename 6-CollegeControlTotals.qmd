@@ -1,0 +1,46 @@
+---
+title: "Forecasted College Enrollment"
+subtitle: Forecasting the College Enrollment in WF-TDM region into the horizon year.
+description: This notebook fetches uses Kem C. Gardner Policy Institute's College Age Population projection to project college enrollment trends into the Horizon year.
+author:
+ - name: Pukar Bhandari
+   email: pukar.bhandari@wfrc.utah.gov
+   affiliation:
+     - name: Wasatch Front Regional Council
+       url: "https://wfrc.utah.gov/"
+date: "2026-02-11"
+---
+
+# Environment Setup
+
+## Import Standard Libraries
+
+```{python}
+import pandas as pd
+```
+
+# Load Data
+
+## Histproc College Enrollment from USHE
+
+```{python}
+
+```
+
+## Historic College Enrollment from IPEDS
+
+The data loaded here is downloaded using 5-CollegeEnrollmentIPEDS.qmd script.
+
+```{python}
+df_enroll_ipeds = ""
+```
+
+## College-Age Population Forecast
+
+The following data was obtained from: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/SchColAgeFS-Dec2022.pdf and converted to excel using https://www.adobe.com/acrobat/online/pdf-to-excel.html tool.
+
+```{python}
+df_gpi_state_forecast = ""
+
+df_gpi_county_forecast = ""
+```

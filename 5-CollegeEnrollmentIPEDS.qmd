@@ -1,5 +1,5 @@
 ---
-title: "College Enrollment"
+title: "Historic College Enrollment"
 subtitle: Fetching College Enrollment Data from NCES Integrated Postsecondary Education Data System (IPEDS)
 description: This notebook fetches Total Enrollment and Full Time Equivalent for all Post Secondary Institutions within Wasatch Front Travel Demand Model region using Integrated Postsecondary Education Data System (IPEDS) from National Center for Education Statistics.
 author:
