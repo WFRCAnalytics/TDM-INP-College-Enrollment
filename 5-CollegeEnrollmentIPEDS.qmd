@@ -657,7 +657,7 @@ else:
     print("df_fall_enrollment not found. Skipping export.")
 
 # 2. Export Non-Online Fall Enrollment
-if "df_non_online" in locals():
+if "df_campus_only" in locals():
     # Naming it "Campus_Enrollment" to distinguish from Total
     enrollment_path = output_dir / "Fall_Enrollment_CampusOnly_1997_2023.csv"
     df_campus_only.to_csv(enrollment_path)

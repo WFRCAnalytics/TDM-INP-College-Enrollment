@@ -18,29 +18,109 @@ date: "2026-02-11"
 ```{python}
 import pandas as pd
 ```
+from plotly.graph_objs.table import header
 
 # Load Data
 
-## Histproc College Enrollment from USHE
+## Enrollment Data
+
+### Utah System of Higer Education
 
 ```{python}
 
 ```
 
-## Historic College Enrollment from IPEDS
-
-The data loaded here is downloaded using 5-CollegeEnrollmentIPEDS.qmd script.
+### Integrated Postsecondary Education Data System
 
 ```{python}
-df_enroll_ipeds = ""
+# Output from 5-CollegeEnrollmentIPEDS.qmd
+df_enroll_ipeds = pd.read_csv("intermediate/Fall_Enrollment_1997_2023.csv")
 ```
 
-## College-Age Population Forecast
+### 2019 Regional Transportation Planning Excel
+
+```{python}
+# Following data is from 2019 RTP, the original source cannot be traced
+df_enroll_rtp19 = pd.DataFrame(
+    {
+        "Year": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999],
+        "UOFU": [24311, 25581, 25868, 25982, 25645, 26810, 26079, 25895, 25018, 25781],
+        "WSU": [13449, 14495, 14993, 14447, 14230, 13996, 13906, 14613, 13900, 14984],
+        "UVU": [7885, 8777, 9623, 10512, 13293, 14040, 14756, 15994, 18174, 20062],
+        "SLCC": [13344, 15972, 17766, 18311, 19440, 20834, 22394, 24307, 19754, 21273],
+        "BYU": [30465, 31101, 31108, 30547, 30413, 30465, 30563, 31249, 32202, 32731],
+    }
+)
+```
+
+## College-Age Population
+
+### American Community Survey 1990-2023
+
+```{python}
+
+```
+
+### Forecast: Kem C. Gardner Policy Institute
 
 The following data was obtained from: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/SchColAgeFS-Dec2022.pdf and converted to excel using https://www.adobe.com/acrobat/online/pdf-to-excel.html tool.
 
 ```{python}
-df_gpi_state_forecast = ""
+# Table 1: Utah School-Age and College-Age Population, 2020-2060
+# Note: School-age reflects population ages 5 to 17. College-age reflects population ages 18 to 24.
+# Source: Kem C. Gardner Policy Institute, 2020–2060 Projections
+df_gpi_state_forecast = (
+    pd.read_excel(
+        "data/GPI/SchColAgeFS-Dec2022.xlsx",
+        sheet_name="Table 1",
+        header=[51, 52],
+        nrows=41,
+    )
+    .dropna(axis=1, how="all")
+    .pipe(
+        lambda d: d.set_axis(
+            [
+                "Year",
+                "Total_Population",
+                "School_Total",
+                "School_Abs_Growth",
+                "School_Growth_Rate",
+                "School_Share",
+                "College_Total",
+                "College_Abs_Growth",
+                "College_Growth_Rate",
+                "College_Share",
+            ],
+            axis=1,
+        )
+    )
+)
 
-df_gpi_county_forecast = ""
+# Table 3: College-Age Population with Change by County, 2020 and 2060
+# Note: College-age reflects population ages 18 to 24.
+# Source: Kem C. Gardner Policy Institute, 2020–2060 Projections
+df_gpi_county_forecast = pd.read_excel(
+    "data/GPI/SchColAgeFS-Dec2022.xlsx", header=129, nrows=30
+).dropna(axis=1, how="all")
+```
+
+
+```{python}
+# Source: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/2025/11/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx
+
+# List of target counties for the query
+wftdm_counties = [
+    "Box Elder County",
+    "Weber County",
+    "Davis County",
+    "Salt Lake County",
+    "Utah County",
+]
+
+df_gpi_projections = pd.read_excel(
+    "data/GPI/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx",
+    sheet_name="Demographic Detail",
+    header=3,
+    nrows=1230,
+).query("Geography in @wftdm_counties")[["Geography", "Year", "Population Ages 18-24"]]
 ```
