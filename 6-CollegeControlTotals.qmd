@@ -17,9 +17,11 @@ date: "2026-02-11"
 
 ```{python}
 from pathlib import Path
-
 import pandas as pd
 from pygris.data import get_census
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_percentage_error
+import numpy as np
 ```
 
 # Load Data
@@ -30,19 +32,15 @@ from pygris.data import get_census
 
 **Source:** https://ushe.edu/institutional-data-resources-fte/
 
-```{python}
-
-```
-
 ### Integrated Postsecondary Education Data System
 
-University of Utah: https://nces.ed.gov/ipeds/reported-data/230764?year=2024&surveyNumber=15
-Weber State University: https://nces.ed.gov/ipeds/reported-data/230782?year=2024&surveyNumber=15
-Utah Valley University: https://nces.ed.gov/ipeds/reported-data/230737?year=2024&surveyNumber=15
-Salt Lake Community College: https://nces.ed.gov/ipeds/reported-data/230746?year=2024&surveyNumber=15
-Brigham Young University: https://nces.ed.gov/ipeds/reported-data/230038?year=2024&surveyNumber=15
-Ensign College: https://nces.ed.gov/ipeds/reported-data/230418?year=2024&surveyNumber=15
-Westminster College: https://nces.ed.gov/ipeds/reported-data/216807?year=2024&surveyNumber=15
+* University of Utah: https://nces.ed.gov/ipeds/reported-data/230764?year=2024&surveyNumber=15
+* Weber State University: https://nces.ed.gov/ipeds/reported-data/230782?year=2024&surveyNumber=15
+* Utah Valley University: https://nces.ed.gov/ipeds/reported-data/230737?year=2024&surveyNumber=15
+* Salt Lake Community College: https://nces.ed.gov/ipeds/reported-data/230746?year=2024&surveyNumber=15
+* Brigham Young University: https://nces.ed.gov/ipeds/reported-data/230038?year=2024&surveyNumber=15
+* Ensign College: https://nces.ed.gov/ipeds/reported-data/230418?year=2024&surveyNumber=15
+* Westminster College: https://nces.ed.gov/ipeds/reported-data/216807?year=2024&surveyNumber=15
 
 ```{python}
 # Output from 5-CollegeEnrollmentIPEDS.qmd
@@ -56,7 +54,7 @@ df_enroll_ipeds = pd.read_csv("intermediate/Fall_Enrollment_1997_2023.csv")
 df_enroll_rtp19 = pd.DataFrame(
     {
         "Year": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999],
-        "UOFU": [24311, 25581, 25868, 25982, 25645, 26810, 26079, 25895, 25018, 25781],
+        "UofU": [24311, 25581, 25868, 25982, 25645, 26810, 26079, 25895, 25018, 25781],
         "WSU": [13449, 14495, 14993, 14447, 14230, 13996, 13906, 14613, 13900, 14984],
         "UVU": [7885, 8777, 9623, 10512, 13293, 14040, 14756, 15994, 18174, 20062],
         "SLCC": [13344, 15972, 17766, 18311, 19440, 20834, 22394, 24307, 19754, 21273],
@@ -70,12 +68,10 @@ df_enroll_rtp19 = pd.DataFrame(
 ### US Census Bureau
 
 ```{python}
-# 1. Define the Master Crosswalk (Sex by Age Universe)
-# This maps the standard 49-variable Census table structure to specific dataset codes.
-# Structure: Total -> Male Total -> Male Age Groups -> Female Total -> Female Age Groups
+# --- 1. Define Variable Crosswalk (Metadata) ---
 var_crosswalk = pd.DataFrame(
     [
-        ("Total", "Total", "P012001", "P12_001N", "B01001_001E"),
+        # Standard 49-variable Census block (Male)
         ("Male", "Total", "P012002", "P12_002N", "B01001_002E"),
         ("Male", "Under 5 years", "P012003", "P12_003N", "B01001_003E"),
         ("Male", "5 to 9 years", "P012004", "P12_004N", "B01001_004E"),
@@ -100,6 +96,7 @@ var_crosswalk = pd.DataFrame(
         ("Male", "75 to 79 years", "P012023", "P12_023N", "B01001_023E"),
         ("Male", "80 to 84 years", "P012024", "P12_024N", "B01001_024E"),
         ("Male", "85 years and over", "P012025", "P12_025N", "B01001_025E"),
+        # Standard 49-variable Census block (Female)
         ("Female", "Total", "P012026", "P12_026N", "B01001_026E"),
         ("Female", "Under 5 years", "P012027", "P12_027N", "B01001_027E"),
         ("Female", "5 to 9 years", "P012028", "P12_028N", "B01001_028E"),
@@ -133,111 +130,83 @@ var_crosswalk["Label"] = var_crosswalk["Gender"] + ": " + var_crosswalk["Age"]
 
 ```{python}
 # Path to the cached master file
-csv_path = Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv")
+CACHE_PATH = Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv")
 
-if not csv_path.exists():
-    print("Fetching universe data using Crosswalk...")
+# --- 2. Fetch & Cache (The "Extract" Phase) ---
+if not CACHE_PATH.exists():
+    print(f"Fetching Universe to {CACHE_PATH}...")
+
+    decennial_years = [2000, 2010, 2020]
+    acs_years = [y for y in range(2009, 2024) if y not in decennial_years]
+
     data_frames = []
 
-    # Iterate through target years
-    for year in [2000, 2010, 2020] + list(range(2009, 2024)):
+    for year in sorted(decennial_years + acs_years):
         try:
-            # 1. Determine Dataset & Select Codes from Crosswalk
-            if year in [2000, 2010]:
-                dataset = "dec/sf1"
-                codes = var_crosswalk["SF1"].tolist()
-            elif year == 2020:
-                dataset = "dec/dhc"
-                codes = var_crosswalk["DHC"].tolist()
+            if year in decennial_years:
+                dataset = "dec/dhc" if year == 2020 else "dec/sf1"
+                code_col = "DHC" if year == 2020 else "SF1"
             else:
-                dataset = "acs/acs5"
-                codes = var_crosswalk["ACS"].tolist()
+                dataset, code_col = "acs/acs5", "ACS"
 
-            # 2. Fetch Data (Requesting 'NAME' + All Codes)
-            # We use the crosswalk codes to query the API
+            year_codes = var_crosswalk[code_col].tolist()
+            rename_map = dict(zip(year_codes, var_crosswalk["Label"]))
+
             df = get_census(
                 dataset=dataset,
-                variables=["NAME"] + codes,
+                variables=["NAME"] + year_codes,
                 year=year,
                 params={"for": "county:*", "in": "state:49"},
                 return_geoid=False,
+                quiet=True,
             )
 
-            # 3. Rename Columns to Human-Readable Labels
-            # Create map: {'P012003': 'Male: Under 5 years', ...}
-            code_map = dict(zip(codes, var_crosswalk["Label"]))
+            df = df.rename(
+                columns={c: "NAME" for c in df.columns if c.upper() == "NAME"}
+            )
+            df = df.rename(columns=rename_map)
 
-            # Apply Rename
-            # Also normalize 'NAME' to ensure consistency
-            if "NAME" not in df.columns:
-                # Attempt to find lowercase 'name' or warn
-                col_name = next((c for c in df.columns if c.upper() == "NAME"), None)
-                if col_name:
-                    df = df.rename(columns={col_name: "NAME"})
+            valid_cols = ["NAME"] + var_crosswalk["Label"].tolist()
+            df = df[df.columns.intersection(valid_cols)].copy()
 
-            df_clean = df.rename(columns=code_map)
-
-            # 4. Filter to keep only relevant columns (NAME + Label Columns)
-            # This drops the 'state', 'county' FIPS columns usually returned by API
-            keep_cols = ["NAME"] + var_crosswalk["Label"].tolist()
-
-            # Intersection check to be safe (in case API didn't return a specific var)
-            final_cols = [c for c in keep_cols if c in df_clean.columns]
-            df_final = df_clean[final_cols].copy()
-
-            df_final["Year"] = year
-            df_final["Dataset"] = dataset
-
-            data_frames.append(df_final)
+            df["Year"], df["Dataset"] = year, dataset
+            data_frames.append(df)
             print(f"Fetched {year}")
 
         except Exception as e:
             print(f"Skipping {year}: {e}")
 
-    # Save to CSV
     if data_frames:
-        df_master = pd.concat(data_frames, ignore_index=True)
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
-        df_master.to_csv(csv_path, index=False)
-        print(f"Master file saved: {csv_path}")
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        pd.concat(data_frames, ignore_index=True).to_csv(CACHE_PATH, index=False)
 ```
 
 ```{python}
-# 1. Load Master File
-df = pd.read_csv(csv_path)
+# | eval: false
 
-# 2. Filter Geography (Wasatch Front)
-wftdm_counties = [
+TARGET_COUNTIES = [
     "Box Elder County",
     "Weber County",
     "Davis County",
     "Salt Lake County",
     "Utah County",
 ]
-df["Geography"] = df["NAME"].str.split(",").str[0]
-df_wfrc = df[df["Geography"].isin(wftdm_counties)].copy()
 
-# 3. Filter Variables (18-24 Age Group)
-# Since we have clean names, we can just search for the strings!
-# We look for "18 and 19", "20", "21", "22 to 24"
-# This avoids accidentally grabbing "Under 18" or "65"
-target_keywords = ["18 and 19", "20 years", "21 years", "22 to 24"]
+# --- 3. Load & Process (The "Transform" Phase) ---
+df_universe = pd.read_csv(CACHE_PATH)
+df_universe["Geography"] = df_universe["NAME"].str.split(",").str[0]
+df_wfrc = df_universe[df_universe["Geography"].isin(TARGET_COUNTIES)].copy()
 
-# Find columns that match these keywords
-target_cols = [
-    c
-    for c in df_wfrc.columns
-    if any(k in c for k in target_keywords) and "Male" in c or "Female" in c
-]
+target_ages = ["18 and 19 years", "20 years", "21 years", "22 to 24 years"]
+target_cols = var_crosswalk.loc[
+    var_crosswalk["Age"].isin(target_ages), "Label"
+].tolist()
 
-# 4. Aggregate
-for col in target_cols:
-    df_wfrc[col] = pd.to_numeric(df_wfrc[col], errors="coerce").fillna(0)
+df_wfrc["Population_18_24"] = (
+    df_wfrc[target_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum(axis=1)
+)
 
-df_wfrc["Population_18_24"] = df_wfrc[target_cols].sum(axis=1)
-
-# 5. Pivot
-df_census_college_age = (
+df_college_age_hist = (
     df_wfrc.pivot_table(
         index="Year", columns="Geography", values="Population_18_24", aggfunc="sum"
     )
@@ -245,18 +214,82 @@ df_census_college_age = (
     .rename_axis(None, axis=1)
 )
 
-print("Historical College Age Population (2000-2023)")
-display(df_census_college_age)
+df_college_age_hist
+```
+
+### Timeseries Data from NHGIS
+
+```{python}
+# | eval: true
+# | echo: true
+# | label: process-nhgis-data
+
+# 1. Load Data
+df_nhgis = pd.read_csv("data/NHGIS/nhgis0002_csv/nhgis0002_ts_nominal_county.csv")
+df_ut = df_nhgis[df_nhgis["STATE"] == "Utah"].copy()
+
+# 2. Select Target Columns
+target_prefixes = ["B57AE", "B57AF", "B57AG", "B57AH"]
+value_cols = [
+    c
+    for c in df_ut.columns
+    if any(c.startswith(p) for p in target_prefixes)
+    and not c.endswith("M")
+]
+
+for col in value_cols:
+    df_ut[col] = pd.to_numeric(df_ut[col], errors="coerce")
+
+# 3. Melt
+df_long = df_ut.melt(
+    id_vars=["COUNTY"],
+    value_vars=value_cols,
+    var_name="Variable",
+    value_name="Population",
+)
+
+# 4. Parse Year
+df_long["Suffix"] = df_long["Variable"].str[5:]
+df_long["Year"] = df_long["Suffix"].apply(
+    lambda x: int(x) if len(x) == 4 else 2000 + int(x[:2])
+)
+df_long["Type"] = df_long["Suffix"].apply(
+    lambda x: "Decennial" if len(x) == 4 else "ACS"
+)
+
+# 5. Filter (Decennial Priority)
+mask_drop = ((df_long["Year"] == 2010) & (df_long["Type"] == "ACS")) | (
+    (df_long["Year"] == 2020) & (df_long["Type"] == "ACS")
+)
+df_clean = df_long[~mask_drop].copy()
+
+# 6. Aggregate
+df_agg = df_clean.groupby(["COUNTY", "Year"])["Population"].sum().reset_index()
+df_agg["Geography"] = df_agg["COUNTY"].apply(
+    lambda x: x if "County" in str(x) else str(x) + " County"
+)
+
+# 7. Pivot
+target_counties = [
+    "Box Elder County",
+    "Weber County",
+    "Davis County",
+    "Salt Lake County",
+    "Utah County",
+]
+
+df_college_age_hist = (
+    df_agg[df_agg["Geography"].isin(target_counties)]
+    .pivot(index="Year", columns="Geography", values="Population")
+    .reset_index()
+)
+df_college_age_hist.columns.name = None
 ```
 
 ### Forecast: Kem C. Gardner Policy Institute
 
-The following data was obtained from: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/SchColAgeFS-Dec2022.pdf and converted to excel using https://www.adobe.com/acrobat/online/pdf-to-excel.html tool.
-
 ```{python}
-# Table 1: Utah School-Age and College-Age Population, 2020-2060
-# Note: School-age reflects population ages 5 to 17. College-age reflects population ages 18 to 24.
-# Source: Kem C. Gardner Policy Institute, 2020–2060 Projections
+# Table 1: Utah School-Age and College-Age Population
 df_gpi_state_forecast = (
     pd.read_excel(
         "data/GPI/SchColAgeFS-Dec2022.xlsx",
@@ -284,19 +317,13 @@ df_gpi_state_forecast = (
     )
 )
 
-# Table 3: College-Age Population with Change by County, 2020 and 2060
-# Note: College-age reflects population ages 18 to 24.
-# Source: Kem C. Gardner Policy Institute, 2020–2060 Projections
+# Table 3: College-Age Population with Change by County
 df_gpi_county_forecast = pd.read_excel(
     "data/GPI/SchColAgeFS-Dec2022.xlsx", header=129, nrows=30
 ).dropna(axis=1, how="all")
 ```
 
-
 ```{python}
-# Source: https://d36oiwf74r1rap.cloudfront.net/wp-content/uploads/2025/11/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx
-
-# List of target counties for the query
 wftdm_counties = [
     "Box Elder County",
     "Weber County",
@@ -316,11 +343,325 @@ df_gpi_projections = pd.read_excel(
     df_gpi_projections.pivot(
         index="Year", columns="Geography", values="Population Ages 18-24"
     )
-    .rename_axis(None, axis=1)  # Removes the "Geography" label from the columns
-    .reset_index()  # Moves 'Year' from index to the first column
+    .rename_axis(None, axis=1)
+    .reset_index()
 )
 ```
 
 # Data Exploration
 
 ## College Age (18 - 24) Population
+
+```{python}
+# --- Preprocessing for OJS Visualization ---
+df_hist_long = df_college_age_hist.melt(
+    id_vars=["Year"], var_name="County", value_name="Population"
+)
+df_hist_long["Type"] = "Historical"
+
+df_proj_long = df_gpi_projections.rename(
+    columns={"Geography": "County", "Population Ages 18-24": "Population"}
+)
+df_proj_long["Type"] = "Projected"
+
+df_plot_combined = pd.concat([df_hist_long, df_proj_long], ignore_index=True)
+ojs_define(data_pop_trend=df_plot_combined.to_dict(orient="records"))
+```
+
+```{ojs}
+//| label: fig-college-age-trend
+//| fig-cap: "Historical and Projected College-Age Population (18-24) by County"
+
+Plot.plot({
+  marks: [
+    Plot.ruleY([0]),
+    Plot.line(data_pop_trend, {
+      filter: d => d.Type === "Historical",
+      x: "Year", y: "Population", z: "County", stroke: "County", strokeWidth: 3
+    }),
+    Plot.line(data_pop_trend, {
+      filter: d => d.Type === "Projected",
+      x: "Year", y: "Population", z: "County", stroke: "County", strokeWidth: 3, strokeDasharray: "5,5"
+    }),
+    Plot.text(data_pop_trend, Plot.selectLast({
+      x: "Year", y: "Population", z: "County", text: "County", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
+    })),
+    Plot.tip(data_pop_trend, Plot.pointerX({
+      x: "Year", y: "Population",
+      title: d => `${d.County}\nYear: ${d.Year}\nPop: ${d.Population.toLocaleString()}\n(${d.Type})`,
+      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
+    }))
+  ],
+  width: 780,
+  marginLeft: 50,
+  marginRight: 110,
+  color: { legend: true },
+  y: { grid: true, label: "Population (18-24)" },
+  x: { tickFormat: "d" },
+  style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "12px" }
+})
+```
+
+## College Enrollment
+
+```{python}
+# --- Preprocessing for Historical Enrollment OJS Visualization ---
+# 1. Standardize & Combine
+# Rename RTP column to match IPEDS
+df_enroll_rtp19 = df_enroll_rtp19.rename(columns={"UOFU": "UofU"})
+
+# Combine sorted by Year
+df_enroll_combined = pd.concat(
+    [df_enroll_rtp19, df_enroll_ipeds], ignore_index=True
+).sort_values("Year")
+
+# 2. Reshape to Long Format
+df_enroll_long = df_enroll_combined.melt(
+    id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
+).dropna()
+
+# 3. Map to Full University Names
+univ_name_map = {
+    "BYU": "Brigham Young University",
+    "ENSIGN": "Ensign College",
+    "SLCC": "Salt Lake Community College",
+    "UofU": "University of Utah",
+    "UVU": "Utah Valley University",
+    "WSU": "Weber State University",
+    "WESTMIN": "Westminster University",
+}
+
+df_enroll_long["University"] = df_enroll_long["Univ_Code"].map(univ_name_map)
+ojs_define(data_enroll_trend=df_enroll_long.to_dict(orient="records"))
+```
+
+```{ojs}
+//| label: fig-enrollment-trend
+//| fig-cap: "Historical Fall Enrollment by University (1990-2023)"
+
+Plot.plot({
+  marks: [
+    Plot.ruleY([0]),
+    Plot.line(data_enroll_trend, {
+      x: "Year", y: "Enrollment", z: "University", stroke: "University", strokeWidth: 3, tip: false
+    }),
+    Plot.text(data_enroll_trend, Plot.selectLast({
+      x: "Year", y: "Enrollment", z: "University", text: "University", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
+    })),
+    Plot.tip(data_enroll_trend, Plot.pointerX({
+      x: "Year", y: "Enrollment",
+      title: d => `${d.University}\nYear: ${d.Year}\nStudents: ${d.Enrollment.toLocaleString()}`,
+      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
+    }))
+  ],
+  marginLeft: 60,
+  marginRight: 180,
+  width: 850,
+  color: { legend: true },
+  y: { grid: true, label: "Fall Enrollment" },
+  x: { tickFormat: "d" },
+  style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "12px" }
+})
+```
+
+# Forecast Enrollment
+
+## Regression Analysis & Verification
+
+```{python}
+# --- 1. Prepare Data for Regression ---
+
+# Independent Variables (X): County Populations (Wide Format)
+X_hist = df_college_age_hist.set_index("Year").sort_index()
+predictors = X_hist.columns.tolist()
+
+# Dependent Variables (y): Enrollment (Wide Format)
+# Use .last() to prefer IPEDS data over RTP data for overlapping years (1997-1999)
+y_hist_all = df_enroll_combined.groupby("Year").last().sort_index()
+
+# Filter universities that exist in our mapping or are known keys
+universities = [
+    c for c in y_hist_all.columns
+    if c in univ_name_map.keys() or c in ["UOFU", "WSU", "UVU", "SLCC", "BYU"]
+]
+
+# Merge to ensure alignment (Inner join on Year)
+df_train_master = y_hist_all.join(X_hist, how="inner", rsuffix="_pop")
+
+# --- 2. Train Models & Validate ---
+model_metrics = []
+model_fit_data = []
+trained_models = {}  # Store models here for the Prediction step
+
+for univ_code in universities:
+    # Filter valid data for this university (Drop NaNs)
+    subset = df_train_master[[univ_code] + predictors].dropna()
+
+    if subset.empty:
+        continue
+
+    X = subset[predictors]
+    y = subset[univ_code]
+
+    # Fit Model
+    model = LinearRegression()
+    model.fit(X, y)
+
+    # Store trained model
+    trained_models[univ_code] = model
+
+    # Predict on Training Data (Validation)
+    y_pred = model.predict(X)
+
+    # Metrics
+    r2 = r2_score(y, y_pred)
+    mape = mean_absolute_percentage_error(y, y_pred)
+    full_name = univ_name_map.get(univ_code, univ_code)
+
+    metrics = {
+        "University": full_name,
+        "R2": round(r2, 4),
+        "MAPE": round(mape, 4),
+        "Intercept": round(model.intercept_, 2),
+    }
+    # Coefficients
+    for county, coef in zip(predictors, model.coef_):
+        metrics[county] = round(coef, 4)
+
+    model_metrics.append(metrics)
+
+    # Fit Data for Plotting
+    for year, actual, pred in zip(subset.index, y, y_pred):
+        model_fit_data.append(
+            {"Year": year, "University": full_name, "Value": actual, "Type": "Actual"}
+        )
+        model_fit_data.append(
+            {"Year": year, "University": full_name, "Value": pred, "Type": "Predicted"}
+        )
+
+# Export to OJS
+ojs_define(
+    data_model_metrics=pd.DataFrame(model_metrics).to_dict(orient="records"),
+    data_model_fit=pd.DataFrame(model_fit_data).to_dict(orient="records"),
+)
+```
+
+### Model Performance
+```{ojs}
+//| label: tbl-model-metrics
+Inputs.table(data_model_metrics, {
+  columns: ["University", "R2", "MAPE", "Box Elder County", "Davis County", "Salt Lake County", "Utah County", "Weber County"],
+  header: { R2: "R-Squared", MAPE: "Mean Abs. % Error" },
+  format: { R2: d => d.toFixed(3), MAPE: d => (d * 100).toFixed(1) + "%" },
+  sort: "R2", reverse: true, layout: "auto"
+})
+```
+
+### Fit Visualization
+```{ojs}
+//| label: fig-model-fit
+//| fig-cap: "College Enrollment Model Fit"
+
+Plot.plot({
+  marks: [
+    Plot.ruleY([0]),
+    Plot.line(data_model_fit, {
+      filter: d => d.Type === "Actual",
+      x: "Year", y: "Value", fx: "University", stroke: "var(--bs-primary)", strokeWidth: 2
+    }),
+    Plot.line(data_model_fit, {
+      filter: d => d.Type === "Predicted",
+      x: "Year", y: "Value", fx: "University", stroke: "var(--bs-danger)", strokeWidth: 2, strokeDasharray: "4,4"
+    }),
+    Plot.tip(data_model_fit, Plot.pointerX({
+      x: "Year", y: "Value", fx: "University",
+      title: d => `${d.Type}: ${Math.round(d.Value).toLocaleString()}`,
+      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
+    }))
+  ],
+  fx: { padding: 0.05, label: null },
+  y: { grid: true, tickFormat: "s", label: "Enrollment" },
+  x: { tickFormat: "d", label: null },
+  width: 900, height: 400, marginLeft: 50, color: { legend: true },
+  style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "11px" }
+})
+```
+
+## Future Forecast
+
+```{python}
+# --- 1. Prepare Future Predictors ---
+# Pivot GPI projections (2024-2060)
+X_forecast = (
+    df_gpi_projections.pivot(
+        index="Year", columns="Geography", values="Population Ages 18-24"
+    )
+    .rename_axis(None, axis=1)
+    .sort_index()
+)
+# Ensure columns match training predictors exactly
+X_future = X_forecast.loc[2024:, predictors].dropna()
+
+# --- 2. Predict using Trained Models ---
+forecast_records = []
+
+for univ_code, model in trained_models.items():
+    if X_future.empty:
+        continue
+
+    # Predict
+    y_pred = model.predict(X_future)
+    full_name = univ_name_map.get(univ_code, univ_code)
+
+    for year, val in zip(X_future.index, y_pred):
+        forecast_records.append({
+            "Year": year,
+            "University": full_name,
+            "Enrollment": max(0, int(val)), # Clamp negative values to 0
+            "Type": "Projected"
+        })
+
+# --- 3. Combine with History ---
+df_forecast = pd.DataFrame(forecast_records)
+
+# Use historical data prepared earlier
+df_history = df_enroll_long.copy()
+df_history["Type"] = "Historical"
+df_history = df_history[["Year", "University", "Enrollment", "Type"]]
+
+df_final_trend = pd.concat([df_history, df_forecast], ignore_index=True)
+
+# Export
+ojs_define(data_final_forecast=df_final_trend.to_dict(orient="records"))
+```
+
+```{ojs}
+//| label: fig-enrollment-forecast
+//| fig-cap: "Forecasted College Enrollment (2024-2060)"
+
+Plot.plot({
+  marks: [
+    Plot.ruleY([0]),
+    Plot.line(data_final_forecast, {
+      filter: d => d.Type === "Historical",
+      x: "Year", y: "Enrollment", z: "University", stroke: "University", strokeWidth: 3
+    }),
+    Plot.line(data_final_forecast, {
+      filter: d => d.Type === "Projected",
+      x: "Year", y: "Enrollment", z: "University", stroke: "University", strokeWidth: 3, strokeDasharray: "5,5"
+    }),
+    Plot.text(data_final_forecast, Plot.selectLast({
+      x: "Year", y: "Enrollment", z: "University", text: "University", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
+    })),
+    Plot.tip(data_final_forecast, Plot.pointerX({
+      x: "Year", y: "Enrollment",
+      title: d => `${d.University}\nYear: ${d.Year}\nStudents: ${d.Enrollment.toLocaleString()}\n(${d.Type})`,
+      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
+    }))
+  ],
+  width: 850, marginLeft: 60, marginRight: 180, color: { legend: true },
+  y: { grid: true, label: "Fall Enrollment" },
+  x: { tickFormat: "d" },
+  style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "12px" }
+})
+```
