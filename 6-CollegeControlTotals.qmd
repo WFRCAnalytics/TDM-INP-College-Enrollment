@@ -157,8 +157,7 @@ if not CACHE_PATH.exists():
                 variables=["NAME"] + year_codes,
                 year=year,
                 params={"for": "county:*", "in": "state:49"},
-                return_geoid=False,
-                quiet=True,
+                return_geoid=True,
             )
 
             df = df.rename(
@@ -220,12 +219,106 @@ df_college_age_hist
 ### Timeseries Data from NHGIS
 
 ```{python}
+# | eval: false
+# | echo: true
+# | label: fetch-ipums-nhgis
+
+import os
+import zipfile
+from pathlib import Path
+from dotenv import load_dotenv
+from ipumspy import IpumsApiClient, AggregateDataExtract, TimeSeriesTable
+
+# Load authentication
+load_dotenv()
+IPUMS_API_KEY = os.getenv("IPUMS_API_KEY")
+
+if IPUMS_API_KEY:
+    client = IpumsApiClient(IPUMS_API_KEY)
+
+    # 1. Define the Time Series Table
+    # B57 is the "Persons by Age [18]" table
+    ts_table = TimeSeriesTable(
+        name="B57",
+        geog_levels=["county"],
+        years=[
+            "1970",
+            "1980",
+            "1990",
+            "2000",
+            "2010",
+            "2020",
+            "2006-2010",
+            "2007-2011",
+            "2008-2012",
+            "2009-2013",
+            "2010-2014",
+            "2011-2015",
+            "2012-2016",
+            "2013-2017",
+            "2014-2018",
+            "2015-2019",
+            "2016-2020",
+            "2017-2021",
+            "2018-2022",
+            "2019-2023",
+            "2020-2024",
+        ],
+    )
+
+    # 2. Build the Extract Request
+    # Geographic extent "490" represents Utah (FIPS 49 with trailing 0 as per IPUMS spec)
+    extract = AggregateDataExtract(
+        collection="nhgis",
+        description="Utah County College Age Time Series",
+        time_series_tables=[ts_table],
+        geographic_extents=["490"],
+        tst_layout="time_by_column_layout",  # Matches the wide CSV structure
+    )
+
+    # 3. Submit and Wait
+    print("Submitting extract to IPUMS NHGIS...")
+    client.submit_extract(extract)
+    print(f"Extract submitted. ID: {extract.extract_id}")
+
+    print("Waiting for extract to complete (this may take a few minutes)...")
+    client.wait_for_extract(extract)
+
+    # 4. Download and Extract
+    download_dir = Path("data/NHGIS")
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    client.download_extract(extract, download_dir=download_dir)
+    zip_path = download_dir / f"nhgis{extract.extract_id:04d}_csv.zip"
+    extract_folder = download_dir / f"nhgis{extract.extract_id:04d}_csv"
+
+    print(f"Unzipping to {extract_folder}...")
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(extract_folder)
+
+    print("IPUMS NHGIS Fetch Complete!")
+else:
+    print("Error: IPUMS_API_KEY not found in .env file.")
+```
+
+
+```{python}
 # | eval: true
 # | echo: true
 # | label: process-nhgis-data
 
 # 1. Load Data
-df_nhgis = pd.read_csv("data/NHGIS/nhgis0002_csv/nhgis0002_ts_nominal_county.csv")
+# Dynamically find the latest NHGIS time-series CSV (Supports both manual and API extracts)
+nhgis_files = sorted(Path("data/NHGIS").rglob("*_ts_nominal_county.csv"))
+if nhgis_files:
+    nhgis_path = nhgis_files[-1] # Grabs the latest one (e.g. 0003 over 0002)
+else:
+    # Fallback to hardcoded if path structure differs
+    nhgis_path = "data/NHGIS/nhgis0002_csv/nhgis0002_ts_nominal_county.csv"
+
+df_nhgis = pd.read_csv(nhgis_path)
+
+# Keep rows where State is "Utah"
 df_ut = df_nhgis[df_nhgis["STATE"] == "Utah"].copy()
 
 # 2. Select Target Columns
@@ -428,7 +521,7 @@ univ_name_map = {
     "UofU": "University of Utah",
     "UVU": "Utah Valley University",
     "WSU": "Weber State University",
-    "WESTMIN": "Westminster University",
+    "WESTMIN": "Westminster College",
 }
 
 df_enroll_long["University"] = df_enroll_long["Univ_Code"].map(univ_name_map)
