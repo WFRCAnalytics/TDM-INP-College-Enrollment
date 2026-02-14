@@ -1,7 +1,7 @@
 ---
 title: "Forecasted College Enrollment"
 subtitle: Forecasting the College Enrollment in WF-TDM region into the horizon year.
-description: This notebook fetches uses Kem C. Gardner Policy Institute's College Age Population projection to project college enrollment trends into the Horizon year.
+description: This notebook uses Kem C. Gardner Policy Institute's College Age Population projection to project college enrollment trends into the Horizon year.
 author:
  - name: Pukar Bhandari
    email: pukar.bhandari@wfrc.utah.gov
@@ -11,28 +11,72 @@ author:
 date: "2026-02-11"
 ---
 
+# Configuration
+
+## File Paths
+```{python}
+from pathlib import Path
+
+# Centralized path configuration for all data inputs and outputs
+PATHS = {
+    # Cache files (intermediate data)
+    'census_cache': Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv"),
+
+    # Input data files
+    'enrollment_ipeds': Path("intermediate/Fall_Enrollment_1997_2023.csv"),
+    'gpi_data': Path("data/GPI/SchColAgeFS-Dec2022.xlsx"),
+    'gpi_projections': Path("data/GPI/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx"),
+
+    # NHGIS data (used when eval: true for NHGIS section)
+    'nhgis_dir': Path("data/NHGIS"),
+
+    # Output paths
+    'model_diagnostics': Path("intermediate/model_diagnostics.csv"),
+    'forecast_output': Path("intermediate/enrollment_forecast_2024_2060.csv"),
+}
+
+# Constants
+TARGET_COUNTIES = [
+    "Box Elder County",
+    "Weber County",
+    "Davis County",
+    "Salt Lake County",
+    "Utah County",
+]
+
+# Age range for college-age population (18-24)
+# Note: This is defined by Kem C. Gardner Policy Institute's methodology
+# and must be maintained for consistency with GPI projections
+COLLEGE_AGE_RANGES = ["18 and 19 years", "20 years", "21 years", "22 to 24 years"]
+
+# Train/test split year - hold out 2020-2023 for model validation
+TEST_START_YEAR = 2020
+```
+
 # Environment Setup
 
 ## Import Standard Libraries
-
 ```{python}
-from pathlib import Path
 import pandas as pd
+import numpy as np
 from pygris.data import get_census
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score, mean_absolute_percentage_error
-import numpy as np
+from sklearn.metrics import r2_score, mean_absolute_percentage_error, mean_squared_error
+import warnings
+warnings.filterwarnings('ignore')
 ```
 
 # Load Data
 
 ## Enrollment Data
 
-### Utah System of Higer Education
+### Utah System of Higher Education
 
 **Source:** https://ushe.edu/institutional-data-resources-fte/
 
 ### Integrated Postsecondary Education Data System
+
+**Note:** Despite the filename suggesting 1997, IPEDS data in our dataset actually starts from 2000.
 
 * University of Utah: https://nces.ed.gov/ipeds/reported-data/230764?year=2024&surveyNumber=15
 * Weber State University: https://nces.ed.gov/ipeds/reported-data/230782?year=2024&surveyNumber=15
@@ -41,16 +85,16 @@ import numpy as np
 * Brigham Young University: https://nces.ed.gov/ipeds/reported-data/230038?year=2024&surveyNumber=15
 * Ensign College: https://nces.ed.gov/ipeds/reported-data/230418?year=2024&surveyNumber=15
 * Westminster College: https://nces.ed.gov/ipeds/reported-data/216807?year=2024&surveyNumber=15
-
 ```{python}
-# Output from 5-CollegeEnrollmentIPEDS.qmd
-df_enroll_ipeds = pd.read_csv("intermediate/Fall_Enrollment_1997_2023.csv")
+# Load IPEDS enrollment data (2000-2023)
+df_enroll_ipeds = pd.read_csv(PATHS['enrollment_ipeds'])
 ```
 
 ### 2019 Regional Transportation Planning Excel
-
 ```{python}
-# Following data is from 2019 RTP, the original source could not be traced
+# Historical enrollment data from 2019 RTP (1990-1999)
+# Note: Original source could not be traced, treating as legacy reference data
+# This data provides enrollment history before IPEDS coverage begins in 2000
 df_enroll_rtp19 = pd.DataFrame(
     {
         "Year": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999],
@@ -67,8 +111,12 @@ df_enroll_rtp19 = pd.DataFrame(
 
 ### US Census Bureau
 
+**Methodology:** This section fetches population data by age and sex for all Utah counties.
+We cache the full dataset locally first, then filter to target counties and age groups.
+This approach ensures reproducibility and allows for future analysis flexibility.
 ```{python}
 # --- 1. Define Variable Crosswalk (Metadata) ---
+# Maps Census variable codes across different survey types (SF1, DHC, ACS)
 var_crosswalk = pd.DataFrame(
     [
         # Standard 49-variable Census block (Male)
@@ -127,14 +175,13 @@ var_crosswalk = pd.DataFrame(
 
 var_crosswalk["Label"] = var_crosswalk["Gender"] + ": " + var_crosswalk["Age"]
 ```
-
 ```{python}
-# Path to the cached master file
-CACHE_PATH = Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv")
+# --- 2. Fetch & Cache Census Data (The "Extract" Phase) ---
+# Downloads and stores ALL counties and ALL age groups for Utah
+# This creates a reusable master dataset for future analyses
 
-# --- 2. Fetch & Cache (The "Extract" Phase) ---
-if not CACHE_PATH.exists():
-    print(f"Fetching Universe to {CACHE_PATH}...")
+if not PATHS["census_cache"].exists():
+    print(f"Fetching Census data to {PATHS['census_cache']}...")
 
     decennial_years = [2000, 2010, 2020]
     acs_years = [y for y in range(2009, 2024) if y not in decennial_years]
@@ -143,6 +190,7 @@ if not CACHE_PATH.exists():
 
     for year in sorted(decennial_years + acs_years):
         try:
+            # Select appropriate dataset and variable codes
             if year in decennial_years:
                 dataset = "dec/dhc" if year == 2020 else "dec/sf1"
                 code_col = "DHC" if year == 2020 else "SF1"
@@ -152,6 +200,7 @@ if not CACHE_PATH.exists():
             year_codes = var_crosswalk[code_col].tolist()
             rename_map = dict(zip(year_codes, var_crosswalk["Label"]))
 
+            # Fetch data from Census API
             df = get_census(
                 dataset=dataset,
                 variables=["NAME"] + year_codes,
@@ -160,11 +209,13 @@ if not CACHE_PATH.exists():
                 return_geoid=True,
             )
 
+            # Standardize column names
             df = df.rename(
                 columns={c: "NAME" for c in df.columns if c.upper() == "NAME"}
             )
             df = df.rename(columns=rename_map)
 
+            # Keep only relevant columns
             valid_cols = ["NAME"] + var_crosswalk["Label"].tolist()
             df = df[df.columns.intersection(valid_cols)].copy()
 
@@ -175,36 +226,46 @@ if not CACHE_PATH.exists():
         except Exception as e:
             print(f"Skipping {year}: {e}")
 
+    # Save combined dataset
     if data_frames:
-        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        pd.concat(data_frames, ignore_index=True).to_csv(CACHE_PATH, index=False)
+        PATHS["census_cache"].parent.mkdir(parents=True, exist_ok=True)
+        pd.concat(data_frames, ignore_index=True).to_csv(
+            PATHS["census_cache"], index=False
+        )
+        print(f"Census data cached successfully")
+else:
+    print(f"Using cached Census data from {PATHS['census_cache']}")
 ```
-
 ```{python}
 # | eval: false
+# | echo: true
+#
+# Toggle this section ON (eval: true) to use Census API data via pygris
+# Toggle this section OFF (eval: false) if you prefer to use NHGIS data instead
+#
+# This approach is preferred when:
+# - You want recent ACS 5-year estimates (up to 2023)
+# - You need programmatic access without manual downloads
+# - You're comfortable with the pygris package interface
 
-TARGET_COUNTIES = [
-    "Box Elder County",
-    "Weber County",
-    "Davis County",
-    "Salt Lake County",
-    "Utah County",
-]
-
-# --- 3. Load & Process (The "Transform" Phase) ---
-df_universe = pd.read_csv(CACHE_PATH)
+# --- 3. Load & Process Census Data (The "Transform" Phase) ---
+df_universe = pd.read_csv(PATHS['census_cache'])
 df_universe["Geography"] = df_universe["NAME"].str.split(",").str[0]
+
+# Filter to WF-TDM region counties only
 df_wfrc = df_universe[df_universe["Geography"].isin(TARGET_COUNTIES)].copy()
 
-target_ages = ["18 and 19 years", "20 years", "21 years", "22 to 24 years"]
+# Select college-age columns (18-24 years) for both male and female
 target_cols = var_crosswalk.loc[
-    var_crosswalk["Age"].isin(target_ages), "Label"
+    var_crosswalk["Age"].isin(COLLEGE_AGE_RANGES), "Label"
 ].tolist()
 
+# Sum across gender and age groups to get total college-age population
 df_wfrc["Population_18_24"] = (
     df_wfrc[target_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum(axis=1)
 )
 
+# Pivot to wide format: Years as rows, Counties as columns
 df_college_age_hist = (
     df_wfrc.pivot_table(
         index="Year", columns="Geography", values="Population_18_24", aggfunc="sum"
@@ -218,14 +279,25 @@ df_college_age_hist
 
 ### Timeseries Data from NHGIS
 
+**Alternative data source:** IPUMS NHGIS provides historically harmonized time-series data.
 ```{python}
 # | eval: false
 # | echo: true
-# | label: fetch-ipums-nhgis
+#
+# Toggle this section ON (eval: true) to fetch data from IPUMS NHGIS API
+# Toggle this section OFF (eval: false) to skip API fetch (uses existing local files)
+#
+# Requirements:
+# - IPUMS_API_KEY environment variable set in .env file
+# - ipumspy package installed
+#
+# This approach is preferred when:
+# - You need historically consistent definitions across decades
+# - You want data going back to 1970
+# - You need higher quality than Census API for historical comparisons
 
 import os
 import zipfile
-from pathlib import Path
 from dotenv import load_dotenv
 from ipumspy import IpumsApiClient, AggregateDataExtract, TimeSeriesTable
 
@@ -285,7 +357,7 @@ if IPUMS_API_KEY:
     client.wait_for_extract(extract)
 
     # 4. Download and Extract
-    download_dir = Path("data/NHGIS")
+    download_dir = PATHS['nhgis_dir']
     download_dir.mkdir(parents=True, exist_ok=True)
 
     client.download_extract(extract, download_dir=download_dir)
@@ -300,21 +372,24 @@ if IPUMS_API_KEY:
 else:
     print("Error: IPUMS_API_KEY not found in .env file.")
 ```
-
-
 ```{python}
 # | eval: true
 # | echo: true
-# | label: process-nhgis-data
+#
+# Toggle this section ON (eval: true) to process NHGIS data files
+# Toggle this section OFF (eval: false) to use Census API data instead
+#
+# This section processes locally stored NHGIS data files
+# Works with both manually downloaded and API-fetched NHGIS extracts
 
 # 1. Load Data
 # Dynamically find the latest NHGIS time-series CSV (Supports both manual and API extracts)
-nhgis_files = sorted(Path("data/NHGIS").rglob("*_ts_nominal_county.csv"))
+nhgis_files = sorted(PATHS['nhgis_dir'].rglob("*_ts_nominal_county.csv"))
 if nhgis_files:
     nhgis_path = nhgis_files[-1] # Grabs the latest one (e.g. 0003 over 0002)
 else:
     # Fallback to hardcoded if path structure differs
-    nhgis_path = "data/NHGIS/nhgis0002_csv/nhgis0002_ts_nominal_county.csv"
+    nhgis_path = PATHS['nhgis_dir'] / "nhgis0002_csv/nhgis0002_ts_nominal_county.csv"
 
 df_nhgis = pd.read_csv(nhgis_path)
 
@@ -322,18 +397,19 @@ df_nhgis = pd.read_csv(nhgis_path)
 df_ut = df_nhgis[df_nhgis["STATE"] == "Utah"].copy()
 
 # 2. Select Target Columns
+# B57AE, B57AF, B57AG, B57AH represent college-age cohorts in NHGIS
 target_prefixes = ["B57AE", "B57AF", "B57AG", "B57AH"]
 value_cols = [
     c
     for c in df_ut.columns
     if any(c.startswith(p) for p in target_prefixes)
-    and not c.endswith("M")
+    and not c.endswith("M")  # Exclude margin of error columns
 ]
 
 for col in value_cols:
     df_ut[col] = pd.to_numeric(df_ut[col], errors="coerce")
 
-# 3. Melt
+# 3. Melt to long format
 df_long = df_ut.melt(
     id_vars=["COUNTY"],
     value_vars=value_cols,
@@ -341,7 +417,7 @@ df_long = df_ut.melt(
     value_name="Population",
 )
 
-# 4. Parse Year
+# 4. Parse Year from variable suffix
 df_long["Suffix"] = df_long["Variable"].str[5:]
 df_long["Year"] = df_long["Suffix"].apply(
     lambda x: int(x) if len(x) == 4 else 2000 + int(x[:2])
@@ -350,29 +426,21 @@ df_long["Type"] = df_long["Suffix"].apply(
     lambda x: "Decennial" if len(x) == 4 else "ACS"
 )
 
-# 5. Filter (Decennial Priority)
+# 5. Filter: Prefer Decennial over ACS for 2010 and 2020
 mask_drop = ((df_long["Year"] == 2010) & (df_long["Type"] == "ACS")) | (
     (df_long["Year"] == 2020) & (df_long["Type"] == "ACS")
 )
 df_clean = df_long[~mask_drop].copy()
 
-# 6. Aggregate
+# 6. Aggregate by County and Year
 df_agg = df_clean.groupby(["COUNTY", "Year"])["Population"].sum().reset_index()
 df_agg["Geography"] = df_agg["COUNTY"].apply(
     lambda x: x if "County" in str(x) else str(x) + " County"
 )
 
-# 7. Pivot
-target_counties = [
-    "Box Elder County",
-    "Weber County",
-    "Davis County",
-    "Salt Lake County",
-    "Utah County",
-]
-
+# 7. Pivot to wide format for consistency with Census API approach
 df_college_age_hist = (
-    df_agg[df_agg["Geography"].isin(target_counties)]
+    df_agg[df_agg["Geography"].isin(TARGET_COUNTIES)]
     .pivot(index="Year", columns="Geography", values="Population")
     .reset_index()
 )
@@ -381,11 +449,16 @@ df_college_age_hist.columns.name = None
 
 ### Forecast: Kem C. Gardner Policy Institute
 
+**Source:** Kem C. Gardner Policy Institute's December 2022 demographic projections for Utah.
+
+**Note:** The age range 18-24 is defined by GPI's methodology and represents the standard
+college-age population used in Utah's demographic planning. This definition must be
+maintained for consistency with the projection methodology.
 ```{python}
-# Table 1: Utah School-Age and College-Age Population
+# Historical state-level trends (reference only, not used in modeling)
 df_gpi_state_forecast = (
     pd.read_excel(
-        "data/GPI/SchColAgeFS-Dec2022.xlsx",
+        PATHS['gpi_data'],
         sheet_name="Table 1",
         header=[51, 52],
         nrows=41,
@@ -410,28 +483,21 @@ df_gpi_state_forecast = (
     )
 )
 
-# Table 3: College-Age Population with Change by County
+# County-level trends (reference only, not used in modeling)
 df_gpi_county_forecast = pd.read_excel(
-    "data/GPI/SchColAgeFS-Dec2022.xlsx", header=129, nrows=30
+    PATHS['gpi_data'], header=129, nrows=30
 ).dropna(axis=1, how="all")
 ```
-
 ```{python}
-wftdm_counties = [
-    "Box Elder County",
-    "Weber County",
-    "Davis County",
-    "Salt Lake County",
-    "Utah County",
-]
-
+# Load county-level projections (2025-2065) - primary data for forecasting
 df_gpi_projections = pd.read_excel(
-    "data/GPI/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx",
+    PATHS['gpi_projections'],
     sheet_name="Demographic Detail",
     header=3,
     nrows=1230,
-).query("Geography in @wftdm_counties")[["Geography", "Year", "Population Ages 18-24"]]
+).query("Geography in @TARGET_COUNTIES")[["Geography", "Year", "Population Ages 18-24"]]
 
+# Preview the projection data structure
 (
     df_gpi_projections.pivot(
         index="Year", columns="Geography", values="Population Ages 18-24"
@@ -444,7 +510,6 @@ df_gpi_projections = pd.read_excel(
 # Data Exploration
 
 ## College Age (18 - 24) Population
-
 ```{python}
 # --- Preprocessing for OJS Visualization ---
 df_hist_long = df_college_age_hist.melt(
@@ -460,7 +525,6 @@ df_proj_long["Type"] = "Projected"
 df_plot_combined = pd.concat([df_hist_long, df_proj_long], ignore_index=True)
 ojs_define(data_pop_trend=df_plot_combined.to_dict(orient="records"))
 ```
-
 ```{ojs}
 //| label: fig-college-age-trend
 //| fig-cap: "Historical and Projected College-Age Population (18-24) by County"
@@ -496,14 +560,14 @@ Plot.plot({
 ```
 
 ## College Enrollment
-
 ```{python}
 # --- Preprocessing for Historical Enrollment OJS Visualization ---
-# 1. Standardize & Combine
-# Rename RTP column to match IPEDS
+
+# 1. Standardize & Combine enrollment data sources
+# Note: RTP19 data covers 1990-1999, IPEDS covers 2000-2023
 df_enroll_rtp19 = df_enroll_rtp19.rename(columns={"UOFU": "UofU"})
 
-# Combine sorted by Year
+# Combine and sort by year
 df_enroll_combined = pd.concat(
     [df_enroll_rtp19, df_enroll_ipeds], ignore_index=True
 ).sort_values("Year")
@@ -527,7 +591,6 @@ univ_name_map = {
 df_enroll_long["University"] = df_enroll_long["Univ_Code"].map(univ_name_map)
 ojs_define(data_enroll_trend=df_enroll_long.to_dict(orient="records"))
 ```
-
 ```{ojs}
 //| label: fig-enrollment-trend
 //| fig-cap: "Historical Fall Enrollment by University (1990-2023)"
@@ -559,129 +622,423 @@ Plot.plot({
 
 # Forecast Enrollment
 
-## Regression Analysis & Verification
+## Regression Analysis with Train/Test Split
 
+**Methodology:** We use multiple linear regression to predict university enrollment based on
+county-level college-age populations. To properly validate model performance, we:
+- Train on data before 2020 (1990-2019)
+- Test on held-out data (2020-2023)
+- Include time as a feature to capture secular trends beyond population changes
 ```{python}
 # --- 1. Prepare Data for Regression ---
 
-# Independent Variables (X): County Populations (Wide Format)
+# Independent Variables (X): County Populations + Time (Wide Format)
 X_hist = df_college_age_hist.set_index("Year").sort_index()
 predictors = X_hist.columns.tolist()
 
-# Dependent Variables (y): Enrollment (Wide Format)
-# Use .last() to prefer IPEDS data over RTP data for overlapping years (1997-1999)
-y_hist_all = df_enroll_combined.groupby("Year").last().sort_index()
+# Add time feature (years since start) to capture non-population trends
+X_hist["YearsSince2000"] = X_hist.index - 2000
 
-# Filter universities that exist in our mapping or are known keys
-universities = [
-    c for c in y_hist_all.columns
-    if c in univ_name_map.keys() or c in ["UOFU", "WSU", "UVU", "SLCC", "BYU"]
-]
+# Update predictor list
+predictors_with_time = predictors + ["YearsSince2000"]
+
+# Dependent Variables (y): Enrollment (Wide Format)
+# Use only IPEDS data (2000 onwards) for consistency
+y_hist_all = df_enroll_ipeds.set_index("Year").sort_index()
+
+# Filter universities that exist in our mapping
+universities = [c for c in y_hist_all.columns if c in univ_name_map.keys()]
 
 # Merge to ensure alignment (Inner join on Year)
 df_train_master = y_hist_all.join(X_hist, how="inner", rsuffix="_pop")
 
-# --- 2. Train Models & Validate ---
-model_metrics = []
+# --- 2. Split into Train and Test Sets ---
+print(
+    f"Train/Test Split: Training on years < {TEST_START_YEAR}, Testing on years >= {TEST_START_YEAR}"
+)
+
+train_mask = df_train_master.index < TEST_START_YEAR
+test_mask = df_train_master.index >= TEST_START_YEAR
+
+df_train = df_train_master[train_mask]
+df_test = df_train_master[test_mask]
+
+print(
+    f"Training years: {df_train.index.min()} - {df_train.index.max()} ({len(df_train)} years)"
+)
+print(
+    f"Testing years: {df_test.index.min()} - {df_test.index.max()} ({len(df_test)} years)"
+)
+
+# --- 3. Train Models & Validate ---
+model_metrics_train = []
+model_metrics_test = []
 model_fit_data = []
+residual_data = []
 trained_models = {}  # Store models here for the Prediction step
 
 for univ_code in universities:
-    # Filter valid data for this university (Drop NaNs)
-    subset = df_train_master[[univ_code] + predictors].dropna()
+    # Prepare training data
+    train_subset = df_train[[univ_code] + predictors_with_time].dropna()
+    test_subset = df_test[[univ_code] + predictors_with_time].dropna()
 
-    if subset.empty:
+    if train_subset.empty:
         continue
 
-    X = subset[predictors]
-    y = subset[univ_code]
+    X_train = train_subset[predictors_with_time]
+    y_train = train_subset[univ_code]
 
-    # Fit Model
+    # Fit Model on training data
     model = LinearRegression()
-    model.fit(X, y)
+    model.fit(X_train, y_train)
 
     # Store trained model
     trained_models[univ_code] = model
 
-    # Predict on Training Data (Validation)
-    y_pred = model.predict(X)
+    # Predict on Training Data
+    y_train_pred = model.predict(X_train)
+    train_residuals = y_train - y_train_pred
 
-    # Metrics
-    r2 = r2_score(y, y_pred)
-    mape = mean_absolute_percentage_error(y, y_pred)
+    # Training Metrics
+    r2_train = r2_score(y_train, y_train_pred)
+    mape_train = mean_absolute_percentage_error(y_train, y_train_pred)
+    rmse_train = np.sqrt(mean_squared_error(y_train, y_train_pred))
     full_name = univ_name_map.get(univ_code, univ_code)
 
-    metrics = {
+    metrics_train = {
         "University": full_name,
-        "R2": round(r2, 4),
-        "MAPE": round(mape, 4),
-        "Intercept": round(model.intercept_, 2),
+        "Dataset": "Train",
+        "R2": float(r2_train),
+        "MAPE": float(mape_train),
+        "RMSE": float(rmse_train),
+        "N": int(len(y_train)),
+        "Intercept": float(model.intercept_),
     }
-    # Coefficients
-    for county, coef in zip(predictors, model.coef_):
-        metrics[county] = round(coef, 4)
 
-    model_metrics.append(metrics)
+    # Add coefficients
+    for pred, coef in zip(predictors_with_time, model.coef_):
+        metrics_train[pred] = float(coef)
 
-    # Fit Data for Plotting
-    for year, actual, pred in zip(subset.index, y, y_pred):
+    model_metrics_train.append(metrics_train)
+
+    # Test Set Validation (if test data exists)
+    if not test_subset.empty:
+        X_test = test_subset[predictors_with_time]
+        y_test = test_subset[univ_code]
+
+        y_test_pred = model.predict(X_test)
+        test_residuals = y_test - y_test_pred
+
+        # Test Metrics
+        r2_test = r2_score(y_test, y_test_pred)
+        mape_test = mean_absolute_percentage_error(y_test, y_test_pred)
+        rmse_test = np.sqrt(mean_squared_error(y_test, y_test_pred))
+
+        metrics_test = {
+            "University": full_name,
+            "Dataset": "Test",
+            "R2": float(r2_test),
+            "MAPE": float(mape_test),
+            "RMSE": float(rmse_test),
+            "N": int(len(y_test)),
+            "Intercept": float(model.intercept_),
+        }
+
+        model_metrics_test.append(metrics_test)
+
+        # Store test predictions for visualization
+        for year, actual, pred in zip(test_subset.index, y_test, y_test_pred):
+            model_fit_data.append(
+                {
+                    "Year": int(year),
+                    "University": full_name,
+                    "Value": float(actual),
+                    "Type": "Actual (Test)",
+                }
+            )
+            model_fit_data.append(
+                {
+                    "Year": int(year),
+                    "University": full_name,
+                    "Value": float(pred),
+                    "Type": "Predicted (Test)",
+                }
+            )
+
+        # Store test residuals
+        for year, resid in zip(test_subset.index, test_residuals):
+            residual_data.append(
+                {
+                    "Year": int(year),
+                    "University": full_name,
+                    "Residual": float(resid),
+                    "Dataset": "Test",
+                }
+            )
+
+    # Store training predictions for visualization
+    for year, actual, pred in zip(train_subset.index, y_train, y_train_pred):
         model_fit_data.append(
-            {"Year": year, "University": full_name, "Value": actual, "Type": "Actual"}
+            {
+                "Year": int(year),
+                "University": full_name,
+                "Value": float(actual),
+                "Type": "Actual (Train)",
+            }
         )
         model_fit_data.append(
-            {"Year": year, "University": full_name, "Value": pred, "Type": "Predicted"}
+            {
+                "Year": int(year),
+                "University": full_name,
+                "Value": float(pred),
+                "Type": "Predicted (Train)",
+            }
         )
 
-# Export to OJS
+    # Store training residuals
+    for year, resid in zip(train_subset.index, train_residuals):
+        residual_data.append(
+            {
+                "Year": int(year),
+                "University": full_name,
+                "Residual": float(resid),
+                "Dataset": "Train",
+            }
+        )
+
+# Combine train and test metrics
+model_metrics_combined = model_metrics_train + model_metrics_test
+
+# Save diagnostics for reference
+pd.DataFrame(model_metrics_combined).to_csv(PATHS["model_diagnostics"], index=False)
+print(f"Model diagnostics saved to {PATHS['model_diagnostics']}")
+
+# Convert to proper format for OJS (ensure all values are JSON-serializable)
+print(f"Exporting {len(model_metrics_combined)} metric records to OJS")
+print(f"Exporting {len(model_fit_data)} fit data points to OJS")
+print(f"Exporting {len(residual_data)} residual data points to OJS")
+```
+
+```{python}
+# Export data to OJS
+# Note: This must be in a separate code block after all data is prepared
 ojs_define(
-    data_model_metrics=pd.DataFrame(model_metrics).to_dict(orient="records"),
-    data_model_fit=pd.DataFrame(model_fit_data).to_dict(orient="records"),
+    data_model_metrics=model_metrics_combined,
+    data_model_fit=model_fit_data,
+    data_residuals=residual_data,
 )
 ```
 
-### Model Performance
+### Model Performance Summary
 ```{ojs}
 //| label: tbl-model-metrics
+//| tbl-cap: "Regression Model Performance on Training and Test Sets"
+
 Inputs.table(data_model_metrics, {
-  columns: ["University", "R2", "MAPE", "Box Elder County", "Davis County", "Salt Lake County", "Utah County", "Weber County"],
-  header: { R2: "R-Squared", MAPE: "Mean Abs. % Error" },
-  format: { R2: d => d.toFixed(3), MAPE: d => (d * 100).toFixed(1) + "%" },
-  sort: "R2", reverse: true, layout: "auto"
+  columns: ["University", "Dataset", "N", "R2", "MAPE", "RMSE"],
+  header: {
+    R2: "R²",
+    MAPE: "Mean Abs. % Error",
+    RMSE: "Root MSE",
+    N: "Years"
+  },
+  format: {
+    R2: d => d.toFixed(3),
+    MAPE: d => (d * 100).toFixed(1) + "%",
+    RMSE: d => d.toFixed(0)
+  },
+  sort: "University",
+  layout: "auto"
 })
 ```
 
-### Fit Visualization
+**Key Observations:**
+
+- **R² values** show how well county populations explain enrollment variance
+- **MAPE** indicates average prediction error as a percentage
+- **RMSE** shows typical prediction error in student count
+- Compare Train vs Test performance to assess model generalization
+
+### Model Coefficients
+```{ojs}
+//| label: tbl-model-coefficients
+//| tbl-cap: "Regression Coefficients by County and Time Trend"
+
+Inputs.table(data_model_metrics.filter(d => d.Dataset === "Train"), {
+  columns: ["University", "Intercept", "Box Elder County", "Davis County", "Salt Lake County", "Utah County", "Weber County", "YearsSince2000"],
+  header: {
+    YearsSince2000: "Time Trend"
+  },
+  format: {
+    Intercept: d => d.toFixed(0),
+    "Box Elder County": d => d.toFixed(3),
+    "Davis County": d => d.toFixed(3),
+    "Salt Lake County": d => d.toFixed(3),
+    "Utah County": d => d.toFixed(3),
+    "Weber County": d => d.toFixed(3),
+    YearsSince2000: d => d.toFixed(1)
+  },
+  sort: "University",
+  layout: "auto"
+})
+```
+
+**Interpretation:**
+
+- **Positive coefficients:** Enrollment increases as county population grows
+- **Negative coefficients:** May indicate out-migration of students to other universities
+- **Time Trend:** Captures enrollment changes not explained by population (e.g., policy changes, tuition, economic factors)
+
+### Training and Test Fit Visualization
 ```{ojs}
 //| label: fig-model-fit
-//| fig-cap: "College Enrollment Model Fit"
+//| fig-cap: "College Enrollment Model Fit: Training (before 2020) and Test (2020-2023) Sets"
 
 Plot.plot({
   marks: [
     Plot.ruleY([0]),
+    Plot.ruleX([2020], {stroke: "red", strokeDasharray: "2,2", strokeOpacity: 0.3}),
+    // Training actual
     Plot.line(data_model_fit, {
-      filter: d => d.Type === "Actual",
+      filter: d => d.Type === "Actual (Train)",
       x: "Year", y: "Value", fx: "University", stroke: "var(--bs-primary)", strokeWidth: 2
     }),
+    // Training predicted
     Plot.line(data_model_fit, {
-      filter: d => d.Type === "Predicted",
+      filter: d => d.Type === "Predicted (Train)",
       x: "Year", y: "Value", fx: "University", stroke: "var(--bs-danger)", strokeWidth: 2, strokeDasharray: "4,4"
+    }),
+    // Test actual
+    Plot.dot(data_model_fit, {
+      filter: d => d.Type === "Actual (Test)",
+      x: "Year", y: "Value", fx: "University", fill: "var(--bs-primary)", r: 4
+    }),
+    // Test predicted
+    Plot.dot(data_model_fit, {
+      filter: d => d.Type === "Predicted (Test)",
+      x: "Year", y: "Value", fx: "University", fill: "var(--bs-danger)", r: 4, stroke: "var(--bs-danger)"
     }),
     Plot.tip(data_model_fit, Plot.pointerX({
       x: "Year", y: "Value", fx: "University",
-      title: d => `${d.Type}: ${Math.round(d.Value).toLocaleString()}`,
+      title: d => `${d.Type}\n${Math.round(d.Value).toLocaleString()} students`,
       fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
     }))
   ],
   fx: { padding: 0.05, label: null },
   y: { grid: true, tickFormat: "s", label: "Enrollment" },
   x: { tickFormat: "d", label: null },
-  width: 900, height: 400, marginLeft: 50, color: { legend: true },
+  width: 900, height: 400, marginLeft: 50,
   style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "11px" }
 })
 ```
 
-## Future Forecast
+**Note:** Red dashed vertical line indicates train/test split at 2020. Models trained only on data before 2020.
 
+## Model Diagnostics
+
+### Residual Analysis
+
+Residuals (prediction errors) help identify model issues:
+- **Random scatter:** Good model fit
+- **Patterns over time:** Model missing time-dependent trends
+- **Increasing variance:** Heteroscedasticity (model uncertainty grows)
+
+```{ojs}
+//| label: fig-residuals-time
+//| fig-cap: "Residual Plot: Prediction Errors Over Time"
+
+Plot.plot({
+  marks: [
+    Plot.ruleY([0], {stroke: "red", strokeDasharray: "2,2"}),
+    Plot.ruleX([2020], {stroke: "gray", strokeDasharray: "2,2", strokeOpacity: 0.3}),
+    Plot.dot(data_residuals, {
+      filter: d => d.Dataset === "Train",
+      x: "Year", y: "Residual", fx: "University",
+      fill: "var(--bs-primary)", fillOpacity: 0.6, r: 3
+    }),
+    Plot.dot(data_residuals, {
+      filter: d => d.Dataset === "Test",
+      x: "Year", y: "Residual", fx: "University",
+      fill: "var(--bs-danger)", fillOpacity: 0.8, r: 4
+    }),
+    Plot.tip(data_residuals, Plot.pointer({
+      x: "Year", y: "Residual", fx: "University",
+      title: d => `Year: ${d.Year}\nError: ${Math.round(d.Residual).toLocaleString()} students\n(${d.Dataset})`,
+      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
+    }))
+  ],
+  fx: { padding: 0.05, label: null },
+  y: { grid: true, label: "Residual (Actual - Predicted)", tickFormat: "s" },
+  x: { tickFormat: "d", label: null },
+  width: 900, height: 400, marginLeft: 60,
+  style: { backgroundColor: "transparent", color: "var(--bs-body-color)", fontFamily: "sans-serif", fontSize: "11px" }
+})
+```
+
+### Residual Distribution
+```{ojs}
+//| label: fig-residuals-dist
+//| fig-cap: "Distribution of Residuals by University"
+
+Plot.plot({
+  marks: [
+    Plot.ruleX([0], {stroke: "var(--bs-danger)", strokeDasharray: "2,2", strokeWidth: 1.5}),
+    Plot.dotX(data_residuals, {
+      x: "Residual",
+      fy: "University",
+      fill: "Dataset",
+      fillOpacity: 0.5,
+      r: 2.5,
+      stroke: "Dataset",
+      strokeWidth: 0.5
+    }),
+    Plot.tickX(data_residuals, Plot.groupY({x: "median"}, {
+      x: "Residual",
+      fy: "University",
+      stroke: "Dataset",
+      strokeWidth: 4
+    })),
+  ],
+  fy: {
+    padding: 0.15,
+    label: null
+  },
+  y: {
+    axis: null
+  },
+  x: {
+    grid: true,
+    label: "Residual (Actual - Predicted)",
+    tickFormat: "s",
+    labelAnchor: "center"
+  },
+  width: 800,
+  height: 450,
+  marginLeft: 180,
+  marginRight: 20,
+  marginTop: 30,
+  marginBottom: 50,
+  color: {
+    legend: true,
+    domain: ["Train", "Test"],
+    range: ["#ff8c00", "#1e3a8a"]
+  },
+  style: {
+    backgroundColor: "transparent",
+    color: "var(--bs-body-color)",
+    fontFamily: "sans-serif",
+    fontSize: "12px"
+  }
+})
+```
+
+**Interpretation:**
+
+- **Symmetric distributions around zero:** Model is unbiased
+- **Outliers:** Years where model significantly over/under-predicted
+- **Compare train vs test:** Similar patterns indicate good generalization
+
+## Future Forecast
 ```{python}
 # --- 1. Prepare Future Predictors ---
 # Pivot GPI projections (2024-2060)
@@ -692,8 +1049,12 @@ X_forecast = (
     .rename_axis(None, axis=1)
     .sort_index()
 )
+
+# Add time feature to future data
+X_forecast["YearsSince2000"] = X_forecast.index - 2000
+
 # Ensure columns match training predictors exactly
-X_future = X_forecast.loc[2024:, predictors].dropna()
+X_future = X_forecast.loc[2024:, predictors_with_time].dropna()
 
 # --- 2. Predict using Trained Models ---
 forecast_records = []
@@ -707,12 +1068,14 @@ for univ_code, model in trained_models.items():
     full_name = univ_name_map.get(univ_code, univ_code)
 
     for year, val in zip(X_future.index, y_pred):
-        forecast_records.append({
-            "Year": year,
-            "University": full_name,
-            "Enrollment": max(0, int(val)), # Clamp negative values to 0
-            "Type": "Projected"
-        })
+        forecast_records.append(
+            {
+                "Year": int(year),
+                "University": full_name,
+                "Enrollment": int(max(0, val)),  # Clamp negative values to 0
+                "Type": "Projected",
+            }
+        )
 
 # --- 3. Combine with History ---
 df_forecast = pd.DataFrame(forecast_records)
@@ -722,10 +1085,24 @@ df_history = df_enroll_long.copy()
 df_history["Type"] = "Historical"
 df_history = df_history[["Year", "University", "Enrollment", "Type"]]
 
+# Ensure proper data types
+df_history["Year"] = df_history["Year"].astype(int)
+df_history["Enrollment"] = df_history["Enrollment"].astype(int)
+
 df_final_trend = pd.concat([df_history, df_forecast], ignore_index=True)
 
-# Export
-ojs_define(data_final_forecast=df_final_trend.to_dict(orient="records"))
+# Save forecast output
+df_forecast.to_csv(PATHS["forecast_output"], index=False)
+print(f"Forecast saved to {PATHS['forecast_output']}")
+
+# Convert to list of dicts for OJS
+final_forecast_data = df_final_trend.to_dict(orient="records")
+print(f"Exporting {len(final_forecast_data)} records to OJS")
+```
+
+```{python}
+# Export forecast to OJS
+ojs_define(data_final_forecast=final_forecast_data)
 ```
 
 ```{ojs}
