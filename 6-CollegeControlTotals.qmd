@@ -3,10 +3,10 @@ title: "Forecasted College Enrollment"
 subtitle: Forecasting the College Enrollment in WF-TDM region into the horizon year.
 description: |
   This notebook forecasts college enrollment for Utah's major universities using a
-  **Weighted Participation Rate** method with logarithmic regression. The approach
-  estimates each university's share of its surrounding college-age population, fits
-  a smooth trend curve to that share, and multiplies by future population projections
-  from the Kem C. Gardner Policy Institute.
+  **Weighted Participation Rate** method. The approach estimates each university's
+  share of its surrounding college-age population, fits a smooth trend curve
+  (Linear or Logarithmic) to that share, applies a regional control total, and
+  multiplies by future population projections from the Kem C. Gardner Policy Institute.
 author:
  - name: Pukar Bhandari
    email: pukar.bhandari@wfrc.utah.gov
@@ -18,7 +18,7 @@ date: "2026-02-11"
 
 # Configuration
 
-## File Paths
+## File Paths & Settings
 ```{python}
 from pathlib import Path
 
@@ -36,7 +36,7 @@ PATHS = {
     ),
     "zip_code": Path("data/UGRC ZIP/UtahZipCodeAreas_-1977770497264301863.gpkg"),
     "enroll_by_zip": Path("intermediate/TotEnrolByZipByCollege.csv"),
-    # NHGIS data (used when eval: true for NHGIS section)
+    # NHGIS data
     "nhgis_dir": Path("data/NHGIS"),
     # Output paths
     "model_diagnostics": Path("intermediate/model_diagnostics.csv"),
@@ -57,6 +57,9 @@ COLLEGE_AGE_RANGES = ["18 and 19 years", "20 years", "21 years", "22 to 24 years
 
 # Train/test split: hold out 2020-2023 for model validation
 TEST_START_YEAR = 2020
+
+# Global Toggles
+CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
 ```
 
 # Environment Setup
@@ -77,31 +80,15 @@ warnings.filterwarnings('ignore')
 
 ## Enrollment Data
 
-### Utah System of Higher Education
+### Utah System of Higher Education & IPEDS
 
-**Source:** https://ushe.edu/institutional-data-resources-fte/
-
-### Integrated Postsecondary Education Data System
-
-**Note:** Despite the filename suggesting 1997, IPEDS data in our dataset actually starts from 2000.
-
-* University of Utah: https://nces.ed.gov/ipeds/reported-data/230764
-* Weber State University: https://nces.ed.gov/ipeds/reported-data/230782
-* Utah Valley University: https://nces.ed.gov/ipeds/reported-data/230737
-* Salt Lake Community College: https://nces.ed.gov/ipeds/reported-data/230746
-* Brigham Young University: https://nces.ed.gov/ipeds/reported-data/230038
-* Ensign College: https://nces.ed.gov/ipeds/reported-data/230418
-* Westminster College: https://nces.ed.gov/ipeds/reported-data/216807
+**Sources:** USHE and Integrated Postsecondary Education Data System (2000-2023)
 
 ```{python}
 # Load IPEDS enrollment data (2000-2023)
 df_enroll_ipeds = pd.read_csv(PATHS['enrollment_ipeds'])
-```
 
-### 2019 Regional Transportation Planning Excel
-```{python}
 # Historical enrollment data from 2019 RTP (1990-1999)
-# Note: Original source could not be traced, treating as legacy reference data
 df_enroll_rtp19 = pd.DataFrame(
     {
         "Year": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999],
@@ -114,12 +101,9 @@ df_enroll_rtp19 = pd.DataFrame(
 )
 ```
 
-## College-Age Population
+## College-Age Population (Historical 18-24)
 
 ### US Census Bureau
-
-**Methodology:** This section fetches population data by age and sex for all Utah counties.
-We cache the full dataset locally first, then filter to target counties and age groups.
 
 ```{python}
 # --- 1. Define Variable Crosswalk (Metadata) ---
@@ -239,12 +223,9 @@ df_college_age_hist = (
     .reset_index()
     .rename_axis(None, axis=1)
 )
-df_college_age_hist
 ```
 
 ### Timeseries Data from NHGIS
-
-**Alternative data source:** IPUMS NHGIS provides historically harmonized time-series data.
 
 ```{python}
 # | eval: false
@@ -307,7 +288,7 @@ nhgis_path = (
 df_nhgis = pd.read_csv(nhgis_path)
 df_ut = df_nhgis[df_nhgis["STATE"] == "Utah"].copy()
 
-# 2. Select college-age columns (B57AE–B57AH = 18–19, 20, 21, 22–24)
+# 2. Select 18-24 age columns (B57AE–B57AH = 18–19, 20, 21, 22–24)
 target_prefixes = ["B57AE", "B57AF", "B57AG", "B57AH"]
 value_cols = [
     c for c in df_ut.columns
@@ -351,30 +332,7 @@ df_college_age_hist = (
 df_college_age_hist.columns.name = None
 ```
 
-### Forecast: Kem C. Gardner Policy Institute
-
-**Source:** Kem C. Gardner Policy Institute's county-level demographic projections (2025–2065).
-
-```{python}
-# Historical state-level trends (reference only)
-df_gpi_state_forecast = (
-    pd.read_excel(PATHS['gpi_data'], sheet_name="Table 1", header=[51, 52], nrows=41)
-    .dropna(axis=1, how="all")
-    .pipe(
-        lambda d: d.set_axis(
-            ["Year","Total_Population","School_Total","School_Abs_Growth",
-             "School_Growth_Rate","School_Share","College_Total","College_Abs_Growth",
-             "College_Growth_Rate","College_Share"],
-            axis=1,
-        )
-    )
-)
-
-# County-level reference data
-df_gpi_county_forecast = (
-    pd.read_excel(PATHS['gpi_data'], header=129, nrows=30).dropna(axis=1, how="all")
-)
-```
+### Forecast: Kem C. Gardner Policy Institute (2025-2060)
 
 ```{python}
 # Primary forecast data: county-level GPI projections (2025–2065)
@@ -388,17 +346,28 @@ df_gpi_projections = (
     .query("Geography in @TARGET_COUNTIES")[["Geography", "Year", "Population Ages 18-24"]]
 )
 
-(
+df_gpi_wide = (
     df_gpi_projections
     .pivot(index="Year", columns="Geography", values="Population Ages 18-24")
     .rename_axis(None, axis=1)
-    .reset_index()
+    .sort_index()
 )
+
+# Backcast 2023–2024 using the average annual delta over the first 3 GPI years
+avg_annual_change = df_gpi_wide.loc[2025:2027].diff().mean()
+gpi_2024 = df_gpi_wide.loc[2025] - avg_annual_change
+gpi_2023 = df_gpi_wide.loc[2025] - 2 * avg_annual_change
+
+df_gpi_ext = pd.concat([
+    pd.DataFrame(gpi_2023).T.rename(index={0: 2023}),
+    pd.DataFrame(gpi_2024).T.rename(index={0: 2024}),
+    df_gpi_wide,
+]).sort_index()
 ```
 
 # Data Exploration
 
-## College Age (18–24) Population
+## College Age (18–24) Population Trend
 ```{python}
 # Melt both sources to long for plotting
 df_hist_long = (
@@ -454,125 +423,38 @@ Plot.plot({
 })
 ```
 
-## College Enrollment
-```{python}
-# Standardize & combine enrollment sources
-df_enroll_rtp19_std = df_enroll_rtp19.rename(columns={"UOFU": "UofU"})
-df_enroll_combined  = pd.concat([df_enroll_rtp19_std, df_enroll_ipeds], ignore_index=True).sort_values("Year")
+## Enrollment by College and County (Dynamic Catchment Generation)
 
-df_enroll_long = df_enroll_combined.melt(
-    id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
-).dropna()
-
-univ_name_map = {
-    "BYU":     "Brigham Young University",
-    "ENSIGN":  "Ensign College",
-    "SLCC":    "Salt Lake Community College",
-    "UofU":    "University of Utah",
-    "UVU":     "Utah Valley University",
-    "WSU":     "Weber State University",
-    "WESTMIN": "Westminster College",
-}
-df_enroll_long["University"] = df_enroll_long["Univ_Code"].map(univ_name_map)
-ojs_define(data_enroll_trend=df_enroll_long.to_dict(orient="records"))
-```
-
-```{ojs}
-//| label: fig-enrollment-trend
-//| fig-cap: "Historical Fall Enrollment by University (1990-2023)"
-
-Plot.plot({
-  marks: [
-    Plot.ruleY([0]),
-    Plot.line(data_enroll_trend, {
-      x: "Year", y: "Enrollment", z: "University",
-      stroke: "University", strokeWidth: 3, tip: false
-    }),
-    Plot.text(data_enroll_trend, Plot.selectLast({
-      x: "Year", y: "Enrollment", z: "University",
-      text: "University", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
-    })),
-    Plot.tip(data_enroll_trend, Plot.pointerX({
-      x: "Year", y: "Enrollment",
-      title: d => `${d.University}\nYear: ${d.Year}\nStudents: ${d.Enrollment.toLocaleString()}`,
-      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
-    }))
-  ],
-  marginLeft: 60, marginRight: 180, width: 850,
-  color: { legend: true },
-  y: { grid: true, label: "Fall Enrollment" },
-  x: { tickFormat: "d" },
-  style: {
-    backgroundColor: "transparent", color: "var(--bs-body-color)",
-    fontFamily: "sans-serif", fontSize: "12px"
-  }
-})
-```
-
-## Enrollment by College and County
+We calculate dynamic base percentages using localized USHE zip-code enrollment patterns for the public universities (UofU, UVU, WSU, SLCC). For private institutions missing from the public dataset, we apply standard assumed market footprints.
 
 ```{python}
-# 1. Configuration (Use a different variable name to avoid conflict)
 TARGET_COLLEGES = ["UOFU", "BYU", "UVU", "SLCC", "WSU", "ENSIGN", "WESTMIN"]
-# Note: No "County" suffix here, as that's how we want to display it
 ANALYSIS_COUNTIES = ["Box Elder", "Weber", "Davis", "Salt Lake", "Utah"]
 
 # Utah Counties Mapping
-utah_counties = sorted(
-    [
-        "Beaver",
-        "Box Elder",
-        "Cache",
-        "Carbon",
-        "Daggett",
-        "Davis",
-        "Duchesne",
-        "Emery",
-        "Garfield",
-        "Grand",
-        "Iron",
-        "Juab",
-        "Kane",
-        "Millard",
-        "Morgan",
-        "Piute",
-        "Rich",
-        "Salt Lake",
-        "San Juan",
-        "Sanpete",
-        "Sevier",
-        "Summit",
-        "Tooele",
-        "Uintah",
-        "Utah",
-        "Wasatch",
-        "Washington",
-        "Wayne",
-        "Weber",
-    ]
-)
+utah_counties = sorted([
+    "Beaver", "Box Elder", "Cache", "Carbon", "Daggett", "Davis", "Duchesne",
+    "Emery", "Garfield", "Grand", "Iron", "Juab", "Kane", "Millard", "Morgan",
+    "Piute", "Rich", "Salt Lake", "San Juan", "Sanpete", "Sevier", "Summit",
+    "Tooele", "Uintah", "Utah", "Wasatch", "Washington", "Wayne", "Weber"
+])
 county_map = {i + 1: name for i, name in enumerate(utah_counties)}
 
-# 2. Load Data
+# Load Zip Data
 df_enroll = pd.read_csv(PATHS["enroll_by_zip"])
 gdf_zip = gpd.read_file(PATHS["zip_code"])
 
-# 3. Process & Analysis
+# Process
 df_enroll["College_Clean"] = df_enroll["COLLEGE"].str.split("_").str[0]
 df_enroll = df_enroll[df_enroll["College_Clean"].isin(TARGET_COLLEGES)].copy()
-
 df_enroll["ZIP5"] = df_enroll["ZIPCODE"].astype(str).str.zfill(5)
 gdf_zip["ZIP5"] = gdf_zip["ZIP5"].astype(str).str.zfill(5)
 
 df_merged = df_enroll.merge(gdf_zip[["ZIP5", "COUNTYNBR"]], on="ZIP5", how="left")
-df_merged["County"] = pd.to_numeric(df_merged["COUNTYNBR"], errors="coerce").map(
-    county_map
-)
-
-# Filter using the new local variable
+df_merged["County"] = pd.to_numeric(df_merged["COUNTYNBR"], errors="coerce").map(county_map)
 df_merged = df_merged[df_merged["County"].isin(ANALYSIS_COUNTIES)]
 
-# Create Summary Table
+# Summary & Percentages
 df_summary = (
     df_merged.groupby(["County", "College_Clean"])["TotEnrol"]
     .sum()
@@ -580,87 +462,21 @@ df_summary = (
     .reindex(columns=TARGET_COLLEGES, fill_value=0)
 )
 
-df_summary
-```
-
-```{python}
-# Calculate the percentage of each college's total enrollment coming from each county
-# Axis=0 sums down the columns (total per college), Axis=1 divides across the rows
 df_percent = df_summary.div(df_summary.sum(axis=0), axis=1)
 
-# Display the table formatted as percentages
-# .style.format("{:.1%}") makes it readable (e.g., 0.25 -> 25.0%)
+# Display dynamic percentages
 df_percent.style.format("{:.1%}")
 ```
 
 # Forecast Enrollment
 
-## How the Model Works
-
-::: {.callout-note title="Plain-Language Summary for Public Officials"}
-**The core question:** How many students will each Utah university enroll as the population grows?
-
-**The answer in three steps:**
-
-1. **Define the market.** Each university draws students from specific nearby counties. We assign weighted shares to reflect this — for example, UVU's market is 85% Utah County and 15% Salt Lake County. We multiply each county's 18–24 population by its weight to get the university's *addressable population*.
-
-2. **Measure the participation rate.** Divide actual enrollment by that addressable population each year. This gives us a *participation rate* — "of every 100 college-age residents in UVU's market, about 39 are enrolled at UVU."
-
-3. **Forecast where the rate is heading.** Participation rates don't grow forever. They rise fast early on, then level off as a market matures. We fit a **logarithmic curve** to the historical rate, which naturally captures this "fast-rise, then flatten" pattern without assuming a hard cap. We then apply the forecasted rate to future population projections from the Kem C. Gardner Policy Institute.
-
-**Built-in safeguards:** A *calibration shift* ensures the forecast starts exactly at the 2023 actual enrollment. A *regional control total* ensures the combined enrollment of all universities never exceeds the historically observed share of the regional college-age population.
-:::
-
-**Model Equation:**
-
-$$\text{Enrollment}_{t} = \left(\alpha + \beta \cdot \ln(t) + \text{Shift}\right) \times \text{Weighted GPI Population}_{t}$$
-
-where $t = \text{Year} - 1999$ (so $t = 1$ in the year 2000) and the *Shift* anchors the forecast to 2023 actuals.
-
----
-
 ## Step 1 — Define Addressable Markets (Catchment Weights)
 
-Each university's *addressable market* is a weighted combination of surrounding county populations. These weights reflect where students realistically commute or relocate from, based on geographic proximity and institution type.
-
-> **Note on WSU:** Weber State's participation rate will exceed 1.0 in some years. This is expected — WSU draws commuter students from across the region, including counties outside its tight catchment definition. The log regression handles this correctly; it is a modeling artifact, not a data error.
-
-> **Note on Ensign & Westminster:** These are small, urban institutions with highly local draws centered on Salt Lake City. Their separate catchments reflect their distinct student geographies from the larger BYU system.
+We programmatically extract the USHE derived weights for our public institutions and combine them with the explicit private institution boundaries.
 
 ```{python}
-# --- Catchment Weight Dictionaries ---
-# Format: { "School_Code": { "County": weight, ... }, ... }
-# Weights must sum to 1.0 per school.
-
 CATCHMENT_WEIGHTS = {
-    "UofU": {
-        "Box Elder County": 0.002,
-        "Davis County": 0.083,
-        "Salt Lake County": 0.810,
-        "Utah County": 0.081,
-        "Weber County": 0.023,
-    },
-    "UVU": {
-        "Box Elder County": 0.003,
-        "Weber County": 0.006,
-        "Davis County": 0.044,
-        "Salt Lake County": 0.208,
-        "Utah County": 0.739,
-    },
-    "WSU": {
-        "Box Elder County": 0.033,
-        "Weber County": 0.458,
-        "Davis County": 0.408,
-        "Salt Lake County": 0.079,
-        "Utah County": 0.022,
-    },
-    "SLCC": {
-        "Box Elder County": 0.003,
-        "Weber County": 0.014,
-        "Davis County": 0.070,
-        "Salt Lake County": 0.834,
-        "Utah County": 0.079,
-    },
+    # Private institutions missing from USHE zip dataset
     "BYU": {
         "Box Elder County": 0.000,
         "Davis County": 0.025,
@@ -669,7 +485,6 @@ CATCHMENT_WEIGHTS = {
         "Utah County": 0.75,
     },
     "ENSIGN": {
-        # Downtown SLC; draws almost entirely from Salt Lake metro
         "Box Elder County": 0.000,
         "Weber County": 0.000,
         "Davis County": 0.15,
@@ -677,7 +492,6 @@ CATCHMENT_WEIGHTS = {
         "Utah County": 0.15,
     },
     "WESTMIN": {
-        # SLC campus; primarily Salt Lake with some regional commuters
         "Box Elder County": 0.000,
         "Weber County": 0.000,
         "Davis County": 0.065,
@@ -686,7 +500,15 @@ CATCHMENT_WEIGHTS = {
     },
 }
 
-# Human-readable labels for charts and tables
+# Pull Dynamic Weights for Public Universities
+zip_to_ipeds = {"UOFU": "UofU", "UVU": "UVU", "WSU": "WSU", "SLCC": "SLCC"}
+
+for zip_key, ipeds_key in zip_to_ipeds.items():
+    if zip_key in df_percent.columns:
+        weights = df_percent[zip_key].to_dict()
+        CATCHMENT_WEIGHTS[ipeds_key] = {f"{k} County": v for k, v in weights.items()}
+
+# Human-readable labels
 DISPLAY_NAMES = {
     "UofU": "University of Utah",
     "UVU": "Utah Valley University",
@@ -696,7 +518,6 @@ DISPLAY_NAMES = {
     "ENSIGN": "Ensign College",
     "WESTMIN": "Westminster College",
 }
-
 SCHOOL_KEYS = list(CATCHMENT_WEIGHTS.keys())
 
 # Verify weights sum to 1.0
@@ -706,25 +527,17 @@ for key, weights in CATCHMENT_WEIGHTS.items():
     print(f"  {key:<10} {status}")
 ```
 
----
-
 ## Step 2 — Weighted Populations
-
-### Historical Population (Census / NHGIS, 2000–2023)
-
-NHGIS provides Decennial Census data for 2000 and 2010, and ACS 5-year estimates from 2011–2023. The gap years **2001–2009** are filled by linear interpolation between the 2000 and 2010 Decennial counts. This is standard practice when blending decennial benchmarks with annual estimates.
 
 ```{python}
 # --- Interpolate Census data to fill 2001–2009 gap ---
-# df_college_age_hist index: sparse (2000, 2010, 2011, ..., 2023)
-# After reindex + interpolate: annual 2000–2023
 df_census_full = (
     df_college_age_hist
     .reindex(range(2000, 2024))
     .interpolate(method="linear")
 )
 
-# --- Compute weighted historical populations ---
+# Compute Historical Weighted Populations
 df_weighted_hist = pd.DataFrame(index=range(2000, 2024))
 for key, weights in CATCHMENT_WEIGHTS.items():
     df_weighted_hist[key] = sum(
@@ -733,35 +546,7 @@ for key, weights in CATCHMENT_WEIGHTS.items():
         if county in df_census_full.columns
     )
 
-print("Weighted Historical Population — last 5 years:")
-print(df_weighted_hist.tail().round(0).to_string())
-```
-
-### Projected Population (GPI, 2024–2060)
-
-GPI projections start at 2025. We backcast **2023 and 2024** using the average year-over-year change over 2025–2027, keeping everything on the GPI scale. This backcasted 2023 value is used only for the calibration shift calculation; the actual 2023 enrollment anchors the forecast.
-
-```{python}
-# --- Build wide GPI table ---
-df_gpi_wide = (
-    df_gpi_projections
-    .pivot(index="Year", columns="Geography", values="Population Ages 18-24")
-    .rename_axis(None, axis=1)
-    .sort_index()
-)
-
-# Backcast 2023–2024 using the average annual delta over the first 3 GPI years
-avg_annual_change = df_gpi_wide.loc[2025:2027].diff().mean()
-gpi_2024 = df_gpi_wide.loc[2025] - avg_annual_change
-gpi_2023 = df_gpi_wide.loc[2025] - 2 * avg_annual_change
-
-df_gpi_ext = pd.concat([
-    pd.DataFrame(gpi_2023).T.rename(index={0: 2023}),
-    pd.DataFrame(gpi_2024).T.rename(index={0: 2024}),
-    df_gpi_wide,
-]).sort_index()
-
-# --- Compute weighted GPI populations (2023–2065) ---
+# Compute Projected Weighted Populations
 df_weighted_proj = pd.DataFrame(index=df_gpi_ext.index)
 for key, weights in CATCHMENT_WEIGHTS.items():
     df_weighted_proj[key] = sum(
@@ -769,36 +554,22 @@ for key, weights in CATCHMENT_WEIGHTS.items():
         for county, weight in weights.items()
         if county in df_gpi_ext.columns
     )
-
-print("Weighted GPI Population — 2023 to 2030:")
-print(df_weighted_proj.loc[2023:2030].round(0).to_string())
 ```
-
----
 
 ## Step 3 — Historic Participation Rates
 
-$$\text{Rate}_{year} = \frac{\text{Actual Enrollment}_{year}}{\text{Weighted Census Population}_{year}}$$
-
-This is computed for every year from 2000 to 2023 using IPEDS enrollment data.
+$$\text{Rate}_{year} = \frac{\text{Actual Enrollment}_{year}}{\text{Weighted Population}_{year}}$$
 
 ```{python}
-# --- Compute historic participation rates ---
+# Compute historic participation rates
 df_ipeds = df_enroll_ipeds.set_index("Year").sort_index()
-
 df_hist_rates = pd.DataFrame(index=range(2000, 2024))
 for key in SCHOOL_KEYS:
     df_hist_rates[key] = (
-        df_ipeds[key].reindex(df_hist_rates.index) /
-        df_weighted_hist[key]
+        df_ipeds[key].reindex(df_hist_rates.index) / df_weighted_hist[key]
     )
 
-print("Historic Participation Rates (2000–2023):")
-print(df_hist_rates.round(4).to_string())
-```
-
-```{python}
-# Export rates to OJS for visualization
+# Export for Visualization
 df_rates_long = df_hist_rates.reset_index().rename(columns={"index": "Year"}).melt(
     id_vars=["Year"], var_name="Univ_Code", value_name="Rate"
 ).dropna()
@@ -807,547 +578,248 @@ df_rates_long["University"] = df_rates_long["Univ_Code"].map(DISPLAY_NAMES)
 ojs_define(data_hist_rates=df_rates_long.to_dict(orient="records"))
 ```
 
-```{ojs}
-//| label: fig-participation-rates
-//| fig-cap: "Historic Participation Rates by University (2000–2023)"
+## Step 4 — Multi-Scenario Regression Models
 
-Plot.plot({
-  marks: [
-    Plot.ruleY([0]),
-    Plot.ruleY([1], { stroke: "var(--bs-danger)", strokeDasharray: "3,3", strokeOpacity: 0.4 }),
-    Plot.line(data_hist_rates, {
-      x: "Year", y: "Rate", z: "University",
-      stroke: "University", strokeWidth: 2.5
-    }),
-    Plot.dot(data_hist_rates, {
-      x: "Year", y: "Rate", z: "University",
-      fill: "University", r: 2.5
-    }),
-    Plot.text(data_hist_rates, Plot.selectLast({
-      x: "Year", y: "Rate", z: "University",
-      text: "University", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
-    })),
-    Plot.tip(data_hist_rates, Plot.pointerX({
-      x: "Year", y: "Rate",
-      title: d => `${d.University}\nYear: ${d.Year}\nRate: ${(d.Rate * 100).toFixed(1)}%`,
-      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
-    }))
-  ],
-  width: 820, marginLeft: 60, marginRight: 180,
-  color: { legend: true },
-  y: {
-    grid: true, label: "Participation Rate (Enrollment / Weighted Pop)",
-    tickFormat: d => (d * 100).toFixed(0) + "%"
-  },
-  x: { tickFormat: "d" },
-  style: {
-    backgroundColor: "transparent", color: "var(--bs-body-color)",
-    fontFamily: "sans-serif", fontSize: "12px"
-  }
-})
-```
+We evaluate two standard structural models for predicting the participation rates:
+* **Linear Model:** $\text{Rate}(t) = \alpha + \beta \cdot t$
+* **Log Model:** $\text{Rate}(t) = \alpha + \beta \cdot \ln(t)$
 
-**Reading this chart:** A rate of 0.40 means 40 of every 100 college-age residents in that university's catchment area are enrolled there. WSU's rate exceeds 100% because Weber State draws students from beyond its narrow three-county catchment — the model handles this correctly.
-
----
-
-## Step 4 — Logarithmic Regression Model
-
-**Why logarithmic?** Participation rates follow a natural "diminishing returns" curve. Early growth is fast as universities expand access and programs. Over time, rates slow as the easily-reachable population saturates. A logarithmic function captures this shape without hard-coding a target or ceiling for any individual school.
-
-$$\text{Rate}(t) = \alpha + \beta \cdot \ln(t), \quad t = \text{Year} - 1999$$
-
-$t$ starts at 1 in the year 2000, so $\ln(1) = 0$ — the intercept $\alpha$ equals the predicted rate in 2000. Each additional year's contribution shrinks as $\ln(t)$ grows more slowly.
-
-**Validation:** Models are trained on 2000–2019 and evaluated on the held-out 2020–2023 period to check predictive accuracy.
+Where $t = \text{Year} - 1999$.
 
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
-# Log Regression: Rate(t) = α + β·ln(t),  t = Year − 1999
+# Fit both Linear and Log Regression Models
 # ──────────────────────────────────────────────────────────────────────────────
-
-log_models       = {}
-model_metrics    = []
-model_fit_data   = []
-residual_data    = []
+models_dict = {"Linear": {}, "Log": {}}
+model_metrics = []
+model_fit_data = []
 
 print(f"Training on 2000–{TEST_START_YEAR - 1} | Evaluating on {TEST_START_YEAR}–2023\n")
-print(f"{'School':<10} {'α (intercept)':>15} {'β (ln slope)':>14} {'Train R²':>10} {'Test R²':>9} {'Test MAPE':>10}")
-print("-" * 75)
 
 for key in SCHOOL_KEYS:
     full_name = DISPLAY_NAMES[key]
-
-    # Build feature: t = Year - 1999, feature = ln(t)
     rates_series = df_hist_rates[key].dropna()
     years_arr    = rates_series.index.values.astype(float)
     rates_arr    = rates_series.values
-    t_arr        = years_arr - 1999
-    ln_t         = np.log(t_arr).reshape(-1, 1)
 
-    # ── Train / Test split ──
+    t_arr = years_arr - 1999
+
+    # Feature Matrices
+    X_lin = t_arr.reshape(-1, 1)
+    X_log = np.log(t_arr).reshape(-1, 1)
+
     train_mask = years_arr < TEST_START_YEAR
     test_mask  = ~train_mask
-
-    ln_t_train   = ln_t[train_mask];   rates_train = rates_arr[train_mask]
-    ln_t_test    = ln_t[test_mask];    rates_test  = rates_arr[test_mask]
     years_train  = years_arr[train_mask].astype(int)
     years_test   = years_arr[test_mask].astype(int)
+    rates_train = rates_arr[train_mask]
+    rates_test  = rates_arr[test_mask]
 
-    # ── Fit on training data ──
-    model = LinearRegression().fit(ln_t_train, rates_train)
-    log_models[key] = model
+    for mod_type in ["Linear", "Log"]:
+        X_all = X_lin if mod_type == "Linear" else X_log
+        X_train = X_all[train_mask]
+        X_test  = X_all[test_mask]
 
-    alpha = float(model.intercept_)
-    beta  = float(model.coef_[0])
+        # Fit Model
+        model = LinearRegression().fit(X_train, rates_train)
+        models_dict[mod_type][key] = model
+        alpha = float(model.intercept_)
+        beta  = float(model.coef_[0])
 
-    # ── Training metrics ──
-    pred_train = model.predict(ln_t_train)
-    pop_train  = df_weighted_hist.loc[years_train, key].values
-    enroll_actual_train = df_ipeds.loc[years_train, key].values
-    enroll_pred_train   = pred_train * pop_train
-
-    r2_train   = r2_score(rates_train, pred_train)
-    mape_train = mean_absolute_percentage_error(enroll_actual_train, enroll_pred_train)
-    rmse_train = float(np.sqrt(mean_squared_error(enroll_actual_train, enroll_pred_train)))
-
-    model_metrics.append({
-        "University": full_name, "Dataset": "Train",
-        "Alpha": alpha, "Beta_LnT": beta,
-        "R2": r2_train, "MAPE": mape_train, "RMSE": rmse_train,
-        "N": len(rates_train), "Intercept": alpha,
-    })
-
-    for yr, actual, pred in zip(years_train, enroll_actual_train, enroll_pred_train):
-        model_fit_data += [
-            {"Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Train)"},
-            {"Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Train)"},
-        ]
-    for yr, resid_rate, pop in zip(years_train, rates_train - pred_train, pop_train):
-        residual_data.append({
-            "Year": int(yr), "University": full_name,
-            "Residual": float(resid_rate * pop), "Dataset": "Train",
-        })
-
-    # ── Test metrics ──
-    r2_test = mape_test = rmse_test = None
-    if test_mask.any():
-        pred_test  = model.predict(ln_t_test)
-        pop_test   = df_weighted_hist.loc[years_test, key].values
-        enroll_actual_test = df_ipeds.loc[years_test, key].values
-        enroll_pred_test   = pred_test * pop_test
-
-        r2_test   = r2_score(rates_test, pred_test)
-        mape_test = mean_absolute_percentage_error(enroll_actual_test, enroll_pred_test)
-        rmse_test = float(np.sqrt(mean_squared_error(enroll_actual_test, enroll_pred_test)))
+        # Train Metrics
+        pred_train = model.predict(X_train)
+        pop_train  = df_weighted_hist.loc[years_train, key].values
+        enroll_act_train = df_ipeds.loc[years_train, key].values
+        enroll_pred_train = pred_train * pop_train
+        r2_train   = r2_score(rates_train, pred_train)
+        mape_train = mean_absolute_percentage_error(enroll_act_train, enroll_pred_train)
 
         model_metrics.append({
-            "University": full_name, "Dataset": "Test",
-            "Alpha": alpha, "Beta_LnT": beta,
-            "R2": r2_test, "MAPE": mape_test, "RMSE": rmse_test,
-            "N": len(rates_test), "Intercept": alpha,
+            "Model": mod_type, "University": full_name, "Dataset": "Train",
+            "Alpha": alpha, "Beta": beta, "R2": r2_train, "MAPE": mape_train
         })
 
-        for yr, actual, pred in zip(years_test, enroll_actual_test, enroll_pred_test):
+        for yr, actual, pred in zip(years_train, enroll_act_train, enroll_pred_train):
             model_fit_data += [
-                {"Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Test)"},
-                {"Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Test)"},
+                {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Train)"},
+                {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Train)"},
             ]
-        for yr, resid_rate, pop in zip(years_test, rates_test - pred_test, pop_test):
-            residual_data.append({
-                "Year": int(yr), "University": full_name,
-                "Residual": float(resid_rate * pop), "Dataset": "Test",
+
+        # Test Metrics
+        if test_mask.any():
+            pred_test = model.predict(X_test)
+            pop_test  = df_weighted_hist.loc[years_test, key].values
+            enroll_act_test = df_ipeds.loc[years_test, key].values
+            enroll_pred_test = pred_test * pop_test
+
+            r2_test   = r2_score(rates_test, pred_test)
+            mape_test = mean_absolute_percentage_error(enroll_act_test, enroll_pred_test)
+
+            model_metrics.append({
+                "Model": mod_type, "University": full_name, "Dataset": "Test",
+                "Alpha": alpha, "Beta": beta, "R2": r2_test, "MAPE": mape_test
             })
 
-    r2_test_str   = f"{r2_test:.3f}"   if r2_test   is not None else "—"
-    mape_test_str = f"{mape_test*100:.1f}%" if mape_test is not None else "—"
-    print(
-        f"{key:<10} {alpha:>15.4f} {beta:>14.4f} "
-        f"{r2_train:>10.3f} {r2_test_str:>9} {mape_test_str:>10}"
-    )
+            for yr, actual, pred in zip(years_test, enroll_act_test, enroll_pred_test):
+                model_fit_data += [
+                    {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Test)"},
+                    {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Test)"},
+                ]
 
 # Save diagnostics
 pd.DataFrame(model_metrics).to_csv(PATHS["model_diagnostics"], index=False)
-print(f"\nDiagnostics saved → {PATHS['model_diagnostics']}")
 ```
-
-```{python}
-# Export diagnostics to OJS
-ojs_define(
-    data_model_metrics=model_metrics,
-    data_model_fit=model_fit_data,
-    data_residuals=residual_data,
-)
-```
-
-### Model Performance
-```{ojs}
-//| label: tbl-model-metrics
-//| tbl-cap: "Log Regression Model Performance — Training (2000–2019) vs Test (2020–2023)"
-
-Inputs.table(data_model_metrics, {
-  columns: ["University", "Dataset", "N", "R2", "MAPE", "RMSE", "Alpha", "Beta_LnT"],
-  header: {
-    R2:       "R²",
-    MAPE:     "Mean Abs % Error",
-    RMSE:     "Root MSE (Students)",
-    Alpha:    "α (intercept)",
-    Beta_LnT: "β (ln slope)",
-    N:        "Years"
-  },
-  format: {
-    R2:       d => d.toFixed(3),
-    MAPE:     d => (d * 100).toFixed(1) + "%",
-    RMSE:     d => Math.round(d).toLocaleString(),
-    Alpha:    d => d.toFixed(4),
-    Beta_LnT: d => d.toFixed(4),
-  },
-  sort: "University",
-  layout: "auto"
-})
-```
-
-### Training and Test Fit
-```{ojs}
-//| label: fig-model-fit
-//| fig-cap: "Model Fit: Actual vs Predicted Enrollment (2000–2023)"
-
-Plot.plot({
-  marks: [
-    Plot.ruleY([0]),
-    Plot.ruleX([2020], { stroke: "gray", strokeDasharray: "2,2", strokeOpacity: 0.5 }),
-    Plot.line(data_model_fit, {
-      filter: d => d.Type === "Actual (Train)",
-      x: "Year", y: "Value", fx: "University",
-      stroke: "var(--bs-primary)", strokeWidth: 2
-    }),
-    Plot.line(data_model_fit, {
-      filter: d => d.Type === "Predicted (Train)",
-      x: "Year", y: "Value", fx: "University",
-      stroke: "var(--bs-danger)", strokeWidth: 2, strokeDasharray: "4,4"
-    }),
-    Plot.dot(data_model_fit, {
-      filter: d => d.Type === "Actual (Test)",
-      x: "Year", y: "Value", fx: "University",
-      fill: "var(--bs-primary)", r: 4
-    }),
-    Plot.dot(data_model_fit, {
-      filter: d => d.Type === "Predicted (Test)",
-      x: "Year", y: "Value", fx: "University",
-      fill: "var(--bs-danger)", r: 4, stroke: "var(--bs-danger)"
-    }),
-    Plot.tip(data_model_fit, Plot.pointerX({
-      x: "Year", y: "Value", fx: "University",
-      title: d => `${d.Type}\n${Math.round(d.Value).toLocaleString()} students`,
-      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
-    }))
-  ],
-  fx: { padding: 0.05, label: null },
-  y: { grid: true, tickFormat: "s", label: "Enrollment" },
-  x: { tickFormat: "d", label: null },
-  width: 950, height: 420, marginLeft: 50,
-  style: {
-    backgroundColor: "transparent", color: "var(--bs-body-color)",
-    fontFamily: "sans-serif", fontSize: "11px"
-  }
-})
-```
-
-**Note:** Gray dashed line = train/test split at 2020. Solid blue = actual; dashed red = log model prediction.
-
-::: {.callout-warning title="Interpreting the 2020–2023 Test Period"}
-The test period (2020–2023) coincides with COVID-19, which caused abrupt, temporary enrollment drops — particularly severe at community colleges like SLCC. This disrupts test metrics (R², MAPE) but does **not** invalidate the long-run forecast. The **calibration shift** in Step 5 re-anchors every school's forecast exactly to its 2023 actual enrollment, so any COVID-era mis-tracking is fully corrected before the projection period begins. Negative test R² values reflect the COVID shock, not a structural model failure.
-:::
-
-### Residuals
-```{ojs}
-//| label: fig-residuals
-//| fig-cap: "Residual Plot: Prediction Errors Over Time (in Students)"
-
-Plot.plot({
-  marks: [
-    Plot.ruleY([0], { stroke: "red", strokeDasharray: "2,2" }),
-    Plot.ruleX([2020], { stroke: "gray", strokeDasharray: "2,2", strokeOpacity: 0.3 }),
-    Plot.dot(data_residuals, {
-      filter: d => d.Dataset === "Train",
-      x: "Year", y: "Residual", fx: "University",
-      fill: "var(--bs-primary)", fillOpacity: 0.6, r: 3
-    }),
-    Plot.dot(data_residuals, {
-      filter: d => d.Dataset === "Test",
-      x: "Year", y: "Residual", fx: "University",
-      fill: "var(--bs-danger)", fillOpacity: 0.8, r: 4
-    }),
-    Plot.tip(data_residuals, Plot.pointer({
-      x: "Year", y: "Residual", fx: "University",
-      title: d => `Year: ${d.Year}\nError: ${Math.round(d.Residual).toLocaleString()} students\n(${d.Dataset})`,
-      fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
-    }))
-  ],
-  fx: { padding: 0.05, label: null },
-  y: { grid: true, label: "Residual (Actual − Predicted)", tickFormat: "s" },
-  x: { tickFormat: "d", label: null },
-  width: 950, height: 420, marginLeft: 60,
-  style: {
-    backgroundColor: "transparent", color: "var(--bs-body-color)",
-    fontFamily: "sans-serif", fontSize: "11px"
-  }
-})
-```
-
----
 
 ## Step 5 — Calibration Shift
 
-Census and GPI use different population methodologies, so their 2023 county population estimates differ. Without correction, the forecast would show an artificial jump at 2024. We prevent this by computing a **shift factor** for each school.
-
-| Step | Description |
-|------|-------------|
-| 1 | Compute the model's predicted participation rate for 2023 (Census scale) |
-| 2 | Compute the *implied GPI rate* for 2023: actual 2023 enrollment ÷ backcasted GPI population |
-| 3 | `Shift = Implied GPI Rate − Model Predicted Rate` |
-| 4 | Add this shift to every future year's predicted rate |
-
-The shift is typically negative (−0.04 to −0.10), meaning the GPI population base is larger than Census for the same area, so the same enrollment count implies a lower rate on the GPI scale.
-
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
-# Step 5: Calibration Shift
+# Step 5: Calibration Shift Calculation (Census -> GPI Scale Bridge)
 # ──────────────────────────────────────────────────────────────────────────────
-
-shift_factors = {}
+shift_factors = {"Linear": {}, "Log": {}}
 shift_summary = []
 
-print(f"{'School':<10} {'Model Rate 2023':>16} {'Implied GPI 2023':>18} {'Shift':>10}")
-print("-" * 58)
+for mod_type in ["Linear", "Log"]:
+    for key in SCHOOL_KEYS:
+        model = models_dict[mod_type][key]
+        t_2023 = 2023 - 1999
+        X_2023 = np.array([[t_2023]]) if mod_type == "Linear" else np.array([[np.log(t_2023)]])
 
-for key, model in log_models.items():
-    t_2023    = 2023 - 1999                          # = 24
-    ln_t_2023 = np.array([[np.log(t_2023)]])
+        model_rate_2023 = float(model.predict(X_2023)[0])
+        actual_enroll_2023 = float(df_ipeds.loc[2023, key])
+        gpi_pop_2023 = float(df_weighted_proj.loc[2023, key])
 
-    # Model-predicted rate at 2023 (Census scale)
-    model_rate_2023 = float(model.predict(ln_t_2023)[0])
+        implied_gpi_rate_2023 = actual_enroll_2023 / gpi_pop_2023
 
-    # Actual 2023 enrollment (from IPEDS)
-    actual_enroll_2023 = float(df_ipeds.loc[2023, key])
+        # Apply Shift Conditionally
+        shift = (implied_gpi_rate_2023 - model_rate_2023) if CALIB_SHIFT else 0.0
+        shift_factors[mod_type][key] = shift
 
-    # GPI backcasted weighted population for 2023
-    gpi_pop_2023 = float(df_weighted_proj.loc[2023, key])
-
-    # Implied rate on the GPI scale
-    implied_gpi_rate_2023 = actual_enroll_2023 / gpi_pop_2023
-
-    shift = implied_gpi_rate_2023 - model_rate_2023
-    shift_factors[key] = shift
-
-    print(
-        f"{key:<10} {model_rate_2023:>16.4f} {implied_gpi_rate_2023:>18.4f} {shift:>10.4f}"
-    )
-    shift_summary.append({
-        "School":            DISPLAY_NAMES[key],
-        "Model_Rate_2023":   round(model_rate_2023, 4),
-        "Implied_GPI_Rate":  round(implied_gpi_rate_2023, 4),
-        "Shift":             round(shift, 4),
-        "Enrollment_2023":   int(actual_enroll_2023),
-        "GPI_Pop_2023":      int(round(gpi_pop_2023)),
-    })
+        shift_summary.append({
+            "Model": mod_type, "School": DISPLAY_NAMES[key],
+            "Model_Rate_2023": round(model_rate_2023, 4),
+            "Implied_GPI_Rate": round(implied_gpi_rate_2023, 4),
+            "Shift": round(shift, 4)
+        })
 
 df_shift_summary = pd.DataFrame(shift_summary)
-print("\nShift factors applied to all future predictions.")
 ```
 
-```{python}
-ojs_define(data_shift_summary=df_shift_summary.to_dict(orient="records"))
-```
-
-```{ojs}
-//| label: tbl-shift-factors
-//| tbl-cap: "Calibration Shift Factors — Bridging Census to GPI Scale at 2023"
-
-Inputs.table(data_shift_summary, {
-  columns: ["School", "Enrollment_2023", "GPI_Pop_2023", "Model_Rate_2023", "Implied_GPI_Rate", "Shift"],
-  header: {
-    School:           "University",
-    Enrollment_2023:  "2023 Enrollment",
-    GPI_Pop_2023:     "GPI Pop (backcasted)",
-    Model_Rate_2023:  "Model Rate @ 2023",
-    Implied_GPI_Rate: "Implied GPI Rate",
-    Shift:            "Shift Applied"
-  },
-  format: {
-    Enrollment_2023:  d => d.toLocaleString(),
-    GPI_Pop_2023:     d => d.toLocaleString(),
-    Model_Rate_2023:  d => (d * 100).toFixed(2) + "%",
-    Implied_GPI_Rate: d => (d * 100).toFixed(2) + "%",
-    Shift:            d => (d * 100).toFixed(2) + "%",
-  },
-  layout: "auto"
-})
-```
-
----
-
-## Step 6 — Regional Control Total
-
-**What is a control total?** A control total acts as a regional sanity check. Even if each university's individual model looks reasonable, their *combined* enrollment shouldn't grow beyond what the region's college-age population can realistically support. We set a ceiling equal to the highest regional penetration rate ever observed historically (with a small 2% buffer for uncertainty).
-
-$$\text{Regional Penetration Rate} = \frac{\sum \text{All University Enrollments}}{\sum \text{All 5-County 18-24 Pop}}$$
-
-If any forecast year's total enrollment would exceed this ceiling, all universities are scaled down proportionally — preserving each school's relative share while respecting the regional limit.
+## Step 6 & 7 — Final Forecasts (Linear and Log)
 
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
-# Step 6: Regional Control Total
+# Step 6: Define Control Total Ceiling
 # ──────────────────────────────────────────────────────────────────────────────
-
-# ── Historical regional penetration ──
 total_enroll_hist   = df_ipeds[SCHOOL_KEYS].sum(axis=1).loc[2000:2023]
 total_pop_hist_5cty = df_census_full[TARGET_COUNTIES].sum(axis=1).loc[2000:2023]
 regional_rate_hist  = (total_enroll_hist / total_pop_hist_5cty).dropna()
 
-# ── Control total ceiling ──
 HIST_MAX_PENETRATION  = float(regional_rate_hist.max())
-PENETRATION_CEILING   = HIST_MAX_PENETRATION * 1.02    # 2% buffer above historical peak
+PENETRATION_CEILING   = HIST_MAX_PENETRATION * 1.02    # 2% buffer above peak
 
-print(f"Historical max regional penetration rate : {HIST_MAX_PENETRATION:.4f}  "
-      f"({HIST_MAX_PENETRATION*100:.1f}%)  [Year {regional_rate_hist.idxmax()}]")
-print(f"Control total ceiling (+ 2% buffer)      : {PENETRATION_CEILING:.4f}  "
-      f"({PENETRATION_CEILING*100:.1f}%)")
-print(f"2023 actual regional penetration         : {regional_rate_hist.loc[2023]:.4f}  "
-      f"({regional_rate_hist.loc[2023]*100:.1f}%)")
-
-# Export historical regional rate for visualization
-df_regional_rate_long = regional_rate_hist.reset_index()
-df_regional_rate_long.columns = ["Year", "Rate"]
-df_regional_rate_long["Type"] = "Historical"
-ojs_define(
-    data_regional_rate_hist=df_regional_rate_long.to_dict(orient="records"),
-    control_ceiling=float(PENETRATION_CEILING),
-)
-```
-
----
-
-## Step 7 — Final Forecast (2024–2060)
-
-For each future year:
-
-1. Compute the log model's predicted rate: $\hat{R}_{t} = \alpha + \beta \cdot \ln(t)$
-2. Apply the calibration shift: $R^{*}_{t} = \hat{R}_{t} + \text{Shift}$
-3. Compute raw enrollment: $E_{t} = R^{*}_{t} \times \text{GPI Weighted Pop}_{t}$
-4. Sum all schools to get regional total
-5. Apply control total: if $\sum E_{t} > \text{Ceiling} \times \text{Total GPI Pop}_{t}$, scale all schools down proportionally
-
-```{python}
 # ──────────────────────────────────────────────────────────────────────────────
-# Step 7: Final Forecast (2024–2060)
+# Step 7: Final Forecast Loops
 # ──────────────────────────────────────────────────────────────────────────────
-
 FORECAST_YEARS = list(range(2024, 2061))
-
-# Total GPI regional population (5 counties combined) for control total
 df_total_gpi_pop = df_gpi_ext[TARGET_COUNTIES].sum(axis=1)
 
 forecast_records   = []
-forecast_by_year   = {}    # year → {school → raw_enrollment}
 regional_rate_proj = []
 
-for year in FORECAST_YEARS:
-    t     = year - 1999
-    ln_t  = np.array([[np.log(t)]])
+for mod_type in ["Linear", "Log"]:
+    for year in FORECAST_YEARS:
+        t = year - 1999
+        X_val = np.array([[t]]) if mod_type == "Linear" else np.array([[np.log(t)]])
 
-    # Raw enrollment for each school
-    raw = {}
-    for key, model in log_models.items():
-        model_rate   = float(model.predict(ln_t)[0])
-        shifted_rate = model_rate + shift_factors[key]
-        gpi_pop      = float(df_weighted_proj.loc[year, key])
-        raw[key]     = max(0.0, shifted_rate * gpi_pop)
+        raw = {}
+        for key in SCHOOL_KEYS:
+            model = models_dict[mod_type][key]
+            model_rate = float(model.predict(X_val)[0])
+            shifted_rate = model_rate + shift_factors[mod_type][key]
+            gpi_pop = float(df_weighted_proj.loc[year, key])
+            raw[key] = max(0.0, shifted_rate * gpi_pop)
 
-    forecast_by_year[year] = raw
+        # Regional Control Total Logic
+        total_raw     = sum(raw.values())
+        total_gpi_pop = float(df_total_gpi_pop.loc[year])
+        proj_rate     = total_raw / total_gpi_pop
+        ceiling_enroll = PENETRATION_CEILING * total_gpi_pop
 
-    # ── Control total check ──
-    total_raw     = sum(raw.values())
-    total_gpi_pop = float(df_total_gpi_pop.loc[year])
-    proj_rate     = total_raw / total_gpi_pop
-    ceiling_enroll = PENETRATION_CEILING * total_gpi_pop
+        if total_raw > ceiling_enroll:
+            scale_factor = ceiling_enroll / total_raw
+            capped = True
+        else:
+            scale_factor = 1.0
+            capped = False
 
-    if total_raw > ceiling_enroll:
-        scale_factor = ceiling_enroll / total_raw
-        capped = True
-    else:
-        scale_factor = 1.0
-        capped = False
-
-    regional_rate_proj.append({
-        "Year":  year,
-        "Rate":  proj_rate * scale_factor,
-        "Type":  "Projected",
-        "Capped": capped,
-    })
-
-    for key, raw_enroll in raw.items():
-        final_enroll = int(round(raw_enroll * scale_factor))
-        forecast_records.append({
-            "Year":         year,
-            "Univ_Code":    key,
-            "University":   DISPLAY_NAMES[key],
-            "Rate_Model":   round(float(log_models[key].predict(ln_t)[0]), 5),
-            "Rate_Shifted": round(float(log_models[key].predict(ln_t)[0]) + shift_factors[key], 5),
-            "Scale_Factor": round(scale_factor, 5),
-            "Pop_GPI":      round(float(df_weighted_proj.loc[year, key]), 0),
-            "Enrollment":   final_enroll,
-            "Type":         "Projected",
+        regional_rate_proj.append({
+            "Model": mod_type,
+            "Year":  year,
+            "Rate":  proj_rate * scale_factor,
+            "Type":  "Projected",
+            "Capped": capped,
         })
 
+        for key, raw_enroll in raw.items():
+            final_enroll = int(round(raw_enroll * scale_factor))
+            forecast_records.append({
+                "Model":        mod_type,
+                "Year":         year,
+                "Univ_Code":    key,
+                "University":   DISPLAY_NAMES[key],
+                "Enrollment":   final_enroll,
+                "Type":         "Projected",
+            })
+
 df_forecast = pd.DataFrame(forecast_records)
-
-# Report any years where the control total was triggered
-capped_years = [r["Year"] for r in regional_rate_proj if r["Capped"]]
-if capped_years:
-    print(f"⚠  Control total ceiling triggered in {len(capped_years)} years:")
-    print(f"   First: {capped_years[0]}, Last: {capped_years[-1]}")
-else:
-    print("✓  Control total not triggered — all years within ceiling.")
-
-# ── Save detailed output ──
 df_forecast.to_csv(PATHS["forecast_output"], index=False)
-print(f"\nForecast saved → {PATHS['forecast_output']}")
-print(df_forecast.head(14).to_string(index=False))
-```
 
-```{python}
-# ── Combine with History for final chart ──
+# Combine Historical (static) with Projected (multidimensional) for OJS Export
 df_history_long = (
     df_enroll_ipeds
     .melt(id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment")
     .dropna()
 )
 df_history_long["University"] = df_history_long["Univ_Code"].map(DISPLAY_NAMES)
-df_history_long["Type"]       = "Historical"
+df_history_long["Type"] = "Historical"
+df_history_long["Model"] = "All" # Serves as catch-all base
 
 df_final_trend = pd.concat(
     [
-        df_history_long[["Year", "University", "Enrollment", "Type"]],
-        df_forecast[["Year", "University", "Enrollment", "Type"]],
+        df_history_long[["Model", "Year", "University", "Enrollment", "Type"]],
+        df_forecast[["Model", "Year", "University", "Enrollment", "Type"]],
     ],
     ignore_index=True,
-).sort_values(["University", "Year"])
+).sort_values(["Model", "University", "Year"])
 
-final_forecast_data = df_final_trend.to_dict(orient="records")
-print(f"Exporting {len(final_forecast_data)} records to OJS")
+# OJS Exports
+df_regional_rate_long = regional_rate_hist.reset_index()
+df_regional_rate_long.columns = ["Year", "Rate"]
+df_regional_rate_long["Type"] = "Historical"
+df_regional_rate_long["Model"] = "All"
 
-# Regional rate for control total chart
 df_regional_rate_proj = pd.DataFrame(regional_rate_proj)
+
 ojs_define(
-    data_final_forecast    = final_forecast_data,
-    data_regional_rate_proj= df_regional_rate_proj.to_dict(orient="records"),
+    data_final_forecast     = df_final_trend.to_dict(orient="records"),
+    data_regional_rate_hist = df_regional_rate_long.to_dict(orient="records"),
+    data_regional_rate_proj = df_regional_rate_proj.to_dict(orient="records"),
+    control_ceiling         = float(PENETRATION_CEILING),
 )
 ```
 
 ---
 
-## Results
+## Results & Scenario Visualizations
+
+```{ojs}
+//| label: scenario-toggles
+viewof selected_model = Inputs.radio(["Log", "Linear"], {
+  label: "Regression Model",
+  value: "Log"
+})
+```
 
 ### Regional Control Total
 ```{ojs}
@@ -1355,7 +827,8 @@ ojs_define(
 //| fig-cap: "Regional Penetration Rate: Historical and Projected vs Control Total Ceiling"
 
 {
-  const allRates = [...data_regional_rate_hist, ...data_regional_rate_proj]
+  const filteredProjRates = data_regional_rate_proj.filter(d => d.Model === selected_model)
+  const allRates = [...data_regional_rate_hist, ...filteredProjRates]
 
   return Plot.plot({
     marks: [
@@ -1403,8 +876,6 @@ ojs_define(
 }
 ```
 
-**Reading this chart:** The dashed red line is the control total ceiling. If the combined enrollment ever approaches it, all schools are scaled down proportionally (shown as red diamonds, if any). This chart helps public officials see the regional enrollment pressure relative to the available college-age population.
-
 ### Enrollment Forecast by University
 ```{ojs}
 //| label: fig-enrollment-forecast
@@ -1415,20 +886,18 @@ Plot.plot({
     Plot.ruleY([0]),
     Plot.ruleX([2024], { stroke: "gray", strokeDasharray: "2,2", strokeOpacity: 0.5 }),
     Plot.line(data_final_forecast, {
-      filter: d => d.Type === "Historical",
+      filter: d => d.Type === "Historical" || (d.Type === "Projected" && d.Model === selected_model),
       x: "Year", y: "Enrollment", z: "University",
-      stroke: "University", strokeWidth: 2.5
-    }),
-    Plot.line(data_final_forecast, {
-      filter: d => d.Type === "Projected",
-      x: "Year", y: "Enrollment", z: "University",
-      stroke: "University", strokeWidth: 2.5, strokeDasharray: "5,5"
+      stroke: "University", strokeWidth: 2.5,
+      strokeDasharray: d => d.Type === "Projected" ? "5,5" : "none"
     }),
     Plot.text(data_final_forecast, Plot.selectLast({
+      filter: d => d.Type === "Historical" || (d.Type === "Projected" && d.Model === selected_model),
       x: "Year", y: "Enrollment", z: "University",
       text: "University", textAnchor: "start", dx: 8, fill: "var(--bs-body-color)"
-    })),
+    }), { stroke: "var(--bs-body-bg)", strokeWidth: 3 }),
     Plot.tip(data_final_forecast, Plot.pointerX({
+      filter: d => d.Type === "Historical" || (d.Type === "Projected" && d.Model === selected_model),
       x: "Year", y: "Enrollment",
       title: d => `${d.University}\nYear: ${d.Year}\nStudents: ${d.Enrollment.toLocaleString()}\n(${d.Type})`,
       fill: "var(--bs-body-bg)", stroke: "var(--bs-body-color)"
@@ -1443,38 +912,4 @@ Plot.plot({
     fontFamily: "sans-serif", fontSize: "12px"
   }
 })
-```
-
-**Note:** Solid lines = historical IPEDS data (2000–2023). Dashed lines = model forecast (2024–2060). Gray dashed vertical line marks the start of the forecast period.
-
-### Forecast Summary Table
-```{python}
-# Pivot forecast to wide for easy reading
-df_forecast_wide = (
-    df_forecast
-    .pivot(index="Year", columns="University", values="Enrollment")
-    .rename_axis(None, axis=1)
-    .reset_index()
-)
-df_forecast_wide["Total"] = df_forecast_wide[list(DISPLAY_NAMES.values())].sum(axis=1)
-
-ojs_define(data_forecast_wide=df_forecast_wide.to_dict(orient="records"))
-```
-
-```{ojs}
-//| label: tbl-forecast-summary
-//| tbl-cap: "Enrollment Forecast Summary — Selected Years"
-
-{
-  const selectYears = [2024, 2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060]
-  const filtered = data_forecast_wide.filter(d => selectYears.includes(d.Year))
-  const cols = Object.keys(data_forecast_wide[0])
-  const fmt = d => (d == null ? "—" : Math.round(d).toLocaleString())
-
-  return Inputs.table(filtered, {
-    columns: cols,
-    format: Object.fromEntries(cols.filter(c => c !== "Year").map(c => [c, fmt])),
-    layout: "auto"
-  })
-}
 ```
