@@ -5,7 +5,7 @@ description: |
   This notebook forecasts college enrollment for Utah's major universities using a
   **Weighted Participation Rate** method. The approach estimates each university's
   share of its surrounding college-age population, fits a smooth trend curve
-  (Linear or Logarithmic) to that share, applies a regional control total, and
+  (Linear, Logarithmic, or Logistic) to that share, applies a regional control total, and
   multiplies by future population projections from the Kem C. Gardner Policy Institute.
 author:
  - name: Pukar Bhandari
@@ -70,6 +70,7 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 from pygris.data import get_census
+from scipy.optimize import curve_fit
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_absolute_percentage_error, mean_squared_error
 import warnings
@@ -580,17 +581,21 @@ ojs_define(data_hist_rates=df_rates_long.to_dict(orient="records"))
 
 ## Step 4 — Multi-Scenario Regression Models
 
-We evaluate two standard structural models for predicting the participation rates:
+We evaluate standard structural models for predicting the participation rates:
 * **Linear Model:** $\text{Rate}(t) = \alpha + \beta \cdot t$
 * **Log Model:** $\text{Rate}(t) = \alpha + \beta \cdot \ln(t)$
+* **Logistic (S-Curve):** $\text{Rate}(t) = \frac{L}{1 + e^{-k(t - t_0)}}$
 
 Where $t = \text{Year} - 1999$.
 
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
-# Fit both Linear and Log Regression Models
+# Fit Linear, Log, and Logistic Regression Models
 # ──────────────────────────────────────────────────────────────────────────────
-models_dict = {"Linear": {}, "Log": {}}
+def logistic_func(t, L, k, t0):
+    return L / (1 + np.exp(-k * (t - t0)))
+
+models_dict = {"Linear": {}, "Log": {}, "Logistic": {}}
 model_metrics = []
 model_fit_data = []
 
@@ -615,19 +620,46 @@ for key in SCHOOL_KEYS:
     rates_train = rates_arr[train_mask]
     rates_test  = rates_arr[test_mask]
 
-    for mod_type in ["Linear", "Log"]:
-        X_all = X_lin if mod_type == "Linear" else X_log
+    for mod_type in ["Linear", "Log", "Logistic"]:
+        X_all = X_lin if mod_type in ["Linear", "Logistic"] else X_log
         X_train = X_all[train_mask]
         X_test  = X_all[test_mask]
 
-        # Fit Model
-        model = LinearRegression().fit(X_train, rates_train)
-        models_dict[mod_type][key] = model
-        alpha = float(model.intercept_)
-        beta  = float(model.coef_[0])
+        if mod_type in ["Linear", "Log"]:
+            # Fit Model
+            model = LinearRegression().fit(X_train, rates_train)
+            models_dict[mod_type][key] = model
+            alpha = float(model.intercept_)
+            beta  = float(model.coef_[0])
+            pred_train = model.predict(X_train)
+            if test_mask.any():
+                pred_test = model.predict(X_test)
+        elif mod_type == "Logistic":
+            try:
+                max_rate = max(rates_train)
+                # Bounds: L bounded to 1.5x max historical rate
+                popt, _ = curve_fit(
+                    logistic_func, X_train.flatten(), rates_train,
+                    bounds=([max_rate, 0, -50], [max_rate * 1.5, 1, 100]),
+                    maxfev=10000
+                )
+                models_dict[mod_type][key] = {"type": "logistic", "popt": popt}
+                alpha = popt[0] # L
+                beta  = popt[1] # k
+                pred_train = logistic_func(X_train.flatten(), *popt)
+                if test_mask.any():
+                    pred_test = logistic_func(X_test.flatten(), *popt)
+            except Exception:
+                # Fallback to Linear if S-Curve fails to converge
+                model = LinearRegression().fit(X_train, rates_train)
+                models_dict[mod_type][key] = model
+                alpha = float(model.intercept_)
+                beta  = float(model.coef_[0])
+                pred_train = model.predict(X_train)
+                if test_mask.any():
+                    pred_test = model.predict(X_test)
 
         # Train Metrics
-        pred_train = model.predict(X_train)
         pop_train  = df_weighted_hist.loc[years_train, key].values
         enroll_act_train = df_ipeds.loc[years_train, key].values
         enroll_pred_train = pred_train * pop_train
@@ -647,7 +679,6 @@ for key in SCHOOL_KEYS:
 
         # Test Metrics
         if test_mask.any():
-            pred_test = model.predict(X_test)
             pop_test  = df_weighted_hist.loc[years_test, key].values
             enroll_act_test = df_ipeds.loc[years_test, key].values
             enroll_pred_test = pred_test * pop_test
@@ -670,22 +701,29 @@ for key in SCHOOL_KEYS:
 pd.DataFrame(model_metrics).to_csv(PATHS["model_diagnostics"], index=False)
 ```
 
-## Step 5 — Calibration Shift
+## Step 5 — Calibration Shift Calculation
 
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
 # Step 5: Calibration Shift Calculation (Census -> GPI Scale Bridge)
 # ──────────────────────────────────────────────────────────────────────────────
-shift_factors = {"Linear": {}, "Log": {}}
+shift_factors = {"Linear": {}, "Log": {}, "Logistic": {}}
 shift_summary = []
 
-for mod_type in ["Linear", "Log"]:
+for mod_type in ["Linear", "Log", "Logistic"]:
     for key in SCHOOL_KEYS:
         model = models_dict[mod_type][key]
         t_2023 = 2023 - 1999
-        X_2023 = np.array([[t_2023]]) if mod_type == "Linear" else np.array([[np.log(t_2023)]])
 
-        model_rate_2023 = float(model.predict(X_2023)[0])
+        if isinstance(model, dict) and model.get("type") == "logistic":
+            model_rate_2023 = logistic_func(t_2023, *model["popt"])
+        elif mod_type in ["Linear", "Logistic"]:
+            X_2023 = np.array([[t_2023]])
+            model_rate_2023 = float(model.predict(X_2023)[0])
+        else:
+            X_2023 = np.array([[np.log(t_2023)]])
+            model_rate_2023 = float(model.predict(X_2023)[0])
+
         actual_enroll_2023 = float(df_ipeds.loc[2023, key])
         gpi_pop_2023 = float(df_weighted_proj.loc[2023, key])
 
@@ -705,7 +743,7 @@ for mod_type in ["Linear", "Log"]:
 df_shift_summary = pd.DataFrame(shift_summary)
 ```
 
-## Step 6 & 7 — Final Forecasts (Linear and Log)
+## Step 6 & 7 — Final Forecasts
 
 ```{python}
 # ──────────────────────────────────────────────────────────────────────────────
@@ -727,15 +765,21 @@ df_total_gpi_pop = df_gpi_ext[TARGET_COUNTIES].sum(axis=1)
 forecast_records   = []
 regional_rate_proj = []
 
-for mod_type in ["Linear", "Log"]:
+for mod_type in ["Linear", "Log", "Logistic"]:
     for year in FORECAST_YEARS:
         t = year - 1999
-        X_val = np.array([[t]]) if mod_type == "Linear" else np.array([[np.log(t)]])
 
         raw = {}
         for key in SCHOOL_KEYS:
             model = models_dict[mod_type][key]
-            model_rate = float(model.predict(X_val)[0])
+
+            if isinstance(model, dict) and model.get("type") == "logistic":
+                model_rate = logistic_func(t, *model["popt"])
+            elif mod_type in ["Linear", "Logistic"]:
+                model_rate = float(model.predict(np.array([[t]]))[0])
+            else:
+                model_rate = float(model.predict(np.array([[np.log(t)]]))[0])
+
             shifted_rate = model_rate + shift_factors[mod_type][key]
             gpi_pop = float(df_weighted_proj.loc[year, key])
             raw[key] = max(0.0, shifted_rate * gpi_pop)
@@ -815,7 +859,7 @@ ojs_define(
 
 ```{ojs}
 //| label: scenario-toggles
-viewof selected_model = Inputs.radio(["Log", "Linear"], {
+viewof selected_model = Inputs.radio(["Log", "Linear", "Logistic"], {
   label: "Regression Model",
   value: "Log"
 })
