@@ -585,6 +585,9 @@ We evaluate standard structural models for predicting the participation rates:
 * **Linear Model:** $\text{Rate}(t) = \alpha + \beta \cdot t$
 * **Log Model:** $\text{Rate}(t) = \alpha + \beta \cdot \ln(t)$
 * **Logistic (S-Curve):** $\text{Rate}(t) = \frac{L}{1 + e^{-k(t - t_0)}}$
+* **Linear (Stable Flagships):**
+  * BYU & UofU → $\text{Enrollment}(t) = \alpha + \beta \cdot t$ *(direct — no population multiplier)*
+  * All others → $\text{Rate}(t) = \alpha + \beta \cdot t$ *(same as Linear)*
 
 Where $t = \text{Year} - 1999$.
 
@@ -595,17 +598,20 @@ Where $t = \text{Year} - 1999$.
 def logistic_func(t, L, k, t0):
     return L / (1 + np.exp(-k * (t - t0)))
 
-models_dict = {"Linear": {}, "Log": {}, "Logistic": {}}
+
+models_dict = {"Linear": {}, "Log": {}, "Logistic": {}, "Linear (Stable Flagships)": {}}
 model_metrics = []
 model_fit_data = []
 
-print(f"Training on 2000–{TEST_START_YEAR - 1} | Evaluating on {TEST_START_YEAR}–2023\n")
+print(
+    f"Training on 2000–{TEST_START_YEAR - 1} | Evaluating on {TEST_START_YEAR}–2023\n"
+)
 
 for key in SCHOOL_KEYS:
     full_name = DISPLAY_NAMES[key]
     rates_series = df_hist_rates[key].dropna()
-    years_arr    = rates_series.index.values.astype(float)
-    rates_arr    = rates_series.values
+    years_arr = rates_series.index.values.astype(float)
+    rates_arr = rates_series.values
 
     t_arr = years_arr - 1999
 
@@ -614,38 +620,59 @@ for key in SCHOOL_KEYS:
     X_log = np.log(t_arr).reshape(-1, 1)
 
     train_mask = years_arr < TEST_START_YEAR
-    test_mask  = ~train_mask
-    years_train  = years_arr[train_mask].astype(int)
-    years_test   = years_arr[test_mask].astype(int)
+    test_mask = ~train_mask
+    years_train = years_arr[train_mask].astype(int)
+    years_test = years_arr[test_mask].astype(int)
     rates_train = rates_arr[train_mask]
-    rates_test  = rates_arr[test_mask]
+    rates_test = rates_arr[test_mask]
 
-    for mod_type in ["Linear", "Log", "Logistic"]:
-        X_all = X_lin if mod_type in ["Linear", "Logistic"] else X_log
+    for mod_type in ["Linear", "Log", "Logistic", "Linear (Stable Flagships)"]:
+        X_all = X_lin if mod_type in ["Linear", "Logistic", "Linear (Stable Flagships)"] else X_log
         X_train = X_all[train_mask]
-        X_test  = X_all[test_mask]
+        X_test = X_all[test_mask]
 
-        if mod_type in ["Linear", "Log"]:
-            # Fit Model
+        if mod_type == "Linear (Stable Flagships)" and key in ["BYU", "UofU"]:
+            # Direct enrollment regression: Enrollment = α + β·t  (t = Year − 1999)
+            # These flagship institutions are capacity-constrained; their enrollment
+            # is better modelled as a direct time trend than as a share of a
+            # fluctuating population base.
+            enroll_train = df_ipeds.loc[years_train, key].values
+            model_enroll = LinearRegression().fit(X_train, enroll_train)
+            models_dict[mod_type][key] = {
+                "type": "direct_enrollment",
+                "model": model_enroll,
+            }
+            alpha = float(model_enroll.intercept_)
+            beta  = float(model_enroll.coef_[0])
+            # pred_train/pred_test are ENROLLMENT values, not participation rates
+            pred_train = model_enroll.predict(X_train)
+            if test_mask.any():
+                pred_test = model_enroll.predict(X_test)
+
+        elif mod_type in ["Linear", "Log", "Linear (Stable Flagships)"]:
+            # Fit Model (Note: Linear Stable Flagships hits here for non BYU/UofU schools)
             model = LinearRegression().fit(X_train, rates_train)
             models_dict[mod_type][key] = model
             alpha = float(model.intercept_)
-            beta  = float(model.coef_[0])
+            beta = float(model.coef_[0])
             pred_train = model.predict(X_train)
             if test_mask.any():
                 pred_test = model.predict(X_test)
+
         elif mod_type == "Logistic":
             try:
                 max_rate = max(rates_train)
                 # Bounds: L bounded to 1.5x max historical rate
                 popt, _ = curve_fit(
-                    logistic_func, X_train.flatten(), rates_train,
+                    logistic_func,
+                    X_train.flatten(),
+                    rates_train,
                     bounds=([max_rate, 0, -50], [max_rate * 1.5, 1, 100]),
-                    maxfev=10000
+                    maxfev=10000,
                 )
                 models_dict[mod_type][key] = {"type": "logistic", "popt": popt}
-                alpha = popt[0] # L
-                beta  = popt[1] # k
+                alpha = popt[0]  # L
+                beta = popt[1]  # k
                 pred_train = logistic_func(X_train.flatten(), *popt)
                 if test_mask.any():
                     pred_test = logistic_func(X_test.flatten(), *popt)
@@ -654,47 +681,100 @@ for key in SCHOOL_KEYS:
                 model = LinearRegression().fit(X_train, rates_train)
                 models_dict[mod_type][key] = model
                 alpha = float(model.intercept_)
-                beta  = float(model.coef_[0])
+                beta = float(model.coef_[0])
                 pred_train = model.predict(X_train)
                 if test_mask.any():
                     pred_test = model.predict(X_test)
 
         # Train Metrics
-        pop_train  = df_weighted_hist.loc[years_train, key].values
+        _is_direct = (
+            isinstance(models_dict[mod_type][key], dict)
+            and models_dict[mod_type][key].get("type") == "direct_enrollment"
+        )
+        pop_train = df_weighted_hist.loc[years_train, key].values
         enroll_act_train = df_ipeds.loc[years_train, key].values
-        enroll_pred_train = pred_train * pop_train
-        r2_train   = r2_score(rates_train, pred_train)
+        if _is_direct:
+            # pred_train IS enrollment — no population multiplier
+            enroll_pred_train = pred_train
+            r2_train = r2_score(enroll_act_train, enroll_pred_train)
+        else:
+            enroll_pred_train = pred_train * pop_train
+            r2_train = r2_score(rates_train, pred_train)
         mape_train = mean_absolute_percentage_error(enroll_act_train, enroll_pred_train)
 
-        model_metrics.append({
-            "Model": mod_type, "University": full_name, "Dataset": "Train",
-            "Alpha": alpha, "Beta": beta, "R2": r2_train, "MAPE": mape_train
-        })
+        model_metrics.append(
+            {
+                "Model": mod_type,
+                "University": full_name,
+                "Dataset": "Train",
+                "Alpha": alpha,
+                "Beta": beta,
+                "R2": r2_train,
+                "MAPE": mape_train,
+            }
+        )
 
         for yr, actual, pred in zip(years_train, enroll_act_train, enroll_pred_train):
             model_fit_data += [
-                {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Train)"},
-                {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Train)"},
+                {
+                    "Model": mod_type,
+                    "Year": int(yr),
+                    "University": full_name,
+                    "Value": float(actual),
+                    "Type": "Actual (Train)",
+                },
+                {
+                    "Model": mod_type,
+                    "Year": int(yr),
+                    "University": full_name,
+                    "Value": float(pred),
+                    "Type": "Predicted (Train)",
+                },
             ]
 
         # Test Metrics
         if test_mask.any():
-            pop_test  = df_weighted_hist.loc[years_test, key].values
+            pop_test = df_weighted_hist.loc[years_test, key].values
             enroll_act_test = df_ipeds.loc[years_test, key].values
-            enroll_pred_test = pred_test * pop_test
+            if _is_direct:
+                # pred_test IS enrollment — no population multiplier
+                enroll_pred_test = pred_test
+                r2_test = r2_score(enroll_act_test, enroll_pred_test)
+            else:
+                enroll_pred_test = pred_test * pop_test
+                r2_test = r2_score(rates_test, pred_test)
+            mape_test = mean_absolute_percentage_error(
+                enroll_act_test, enroll_pred_test
+            )
 
-            r2_test   = r2_score(rates_test, pred_test)
-            mape_test = mean_absolute_percentage_error(enroll_act_test, enroll_pred_test)
-
-            model_metrics.append({
-                "Model": mod_type, "University": full_name, "Dataset": "Test",
-                "Alpha": alpha, "Beta": beta, "R2": r2_test, "MAPE": mape_test
-            })
+            model_metrics.append(
+                {
+                    "Model": mod_type,
+                    "University": full_name,
+                    "Dataset": "Test",
+                    "Alpha": alpha,
+                    "Beta": beta,
+                    "R2": r2_test,
+                    "MAPE": mape_test,
+                }
+            )
 
             for yr, actual, pred in zip(years_test, enroll_act_test, enroll_pred_test):
                 model_fit_data += [
-                    {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(actual), "Type": "Actual (Test)"},
-                    {"Model": mod_type, "Year": int(yr), "University": full_name, "Value": float(pred),   "Type": "Predicted (Test)"},
+                    {
+                        "Model": mod_type,
+                        "Year": int(yr),
+                        "University": full_name,
+                        "Value": float(actual),
+                        "Type": "Actual (Test)",
+                    },
+                    {
+                        "Model": mod_type,
+                        "Year": int(yr),
+                        "University": full_name,
+                        "Value": float(pred),
+                        "Type": "Predicted (Test)",
+                    },
                 ]
 
 # Save diagnostics
@@ -707,17 +787,39 @@ pd.DataFrame(model_metrics).to_csv(PATHS["model_diagnostics"], index=False)
 # ──────────────────────────────────────────────────────────────────────────────
 # Step 5: Calibration Shift Calculation (Census -> GPI Scale Bridge)
 # ──────────────────────────────────────────────────────────────────────────────
-shift_factors = {"Linear": {}, "Log": {}, "Logistic": {}}
+shift_factors = {
+    "Linear": {},
+    "Log": {},
+    "Logistic": {},
+    "Linear (Stable Flagships)": {},
+}
 shift_summary = []
 
-for mod_type in ["Linear", "Log", "Logistic"]:
+for mod_type in ["Linear", "Log", "Logistic", "Linear (Stable Flagships)"]:
     for key in SCHOOL_KEYS:
         model = models_dict[mod_type][key]
         t_2023 = 2023 - 1999
 
-        if isinstance(model, dict) and model.get("type") == "logistic":
+        if isinstance(model, dict) and model.get("type") == "direct_enrollment":
+            # Shift is in ENROLLMENT units (not rate units) — no GPI pop scaling needed
+            X_2023 = np.array([[t_2023]])
+            model_enroll_2023 = float(model["model"].predict(X_2023)[0])
+            actual_enroll_2023 = float(df_ipeds.loc[2023, key])
+            shift = (actual_enroll_2023 - model_enroll_2023) if CALIB_SHIFT else 0.0
+            shift_factors[mod_type][key] = shift
+            shift_summary.append({
+                "Model": mod_type,
+                "School": DISPLAY_NAMES[key],
+                "Model_Rate_2023": round(model_enroll_2023, 0),   # enrollment, not rate
+                "Implied_GPI_Rate": round(actual_enroll_2023, 0), # enrollment, not rate
+                "Shift": round(shift, 0),
+            })
+            continue
+        elif isinstance(model, dict) and model.get("type") == "constant_rate":
+            model_rate_2023 = model["value"]
+        elif isinstance(model, dict) and model.get("type") == "logistic":
             model_rate_2023 = logistic_func(t_2023, *model["popt"])
-        elif mod_type in ["Linear", "Logistic"]:
+        elif mod_type in ["Linear", "Logistic", "Linear (Stable Flagships)"]:
             X_2023 = np.array([[t_2023]])
             model_rate_2023 = float(model.predict(X_2023)[0])
         else:
@@ -733,12 +835,15 @@ for mod_type in ["Linear", "Log", "Logistic"]:
         shift = (implied_gpi_rate_2023 - model_rate_2023) if CALIB_SHIFT else 0.0
         shift_factors[mod_type][key] = shift
 
-        shift_summary.append({
-            "Model": mod_type, "School": DISPLAY_NAMES[key],
-            "Model_Rate_2023": round(model_rate_2023, 4),
-            "Implied_GPI_Rate": round(implied_gpi_rate_2023, 4),
-            "Shift": round(shift, 4)
-        })
+        shift_summary.append(
+            {
+                "Model": mod_type,
+                "School": DISPLAY_NAMES[key],
+                "Model_Rate_2023": round(model_rate_2023, 4),
+                "Implied_GPI_Rate": round(implied_gpi_rate_2023, 4),
+                "Shift": round(shift, 4),
+            }
+        )
 
 df_shift_summary = pd.DataFrame(shift_summary)
 ```
@@ -749,12 +854,12 @@ df_shift_summary = pd.DataFrame(shift_summary)
 # ──────────────────────────────────────────────────────────────────────────────
 # Step 6: Define Control Total Ceiling
 # ──────────────────────────────────────────────────────────────────────────────
-total_enroll_hist   = df_ipeds[SCHOOL_KEYS].sum(axis=1).loc[2000:2023]
+total_enroll_hist = df_ipeds[SCHOOL_KEYS].sum(axis=1).loc[2000:2023]
 total_pop_hist_5cty = df_census_full[TARGET_COUNTIES].sum(axis=1).loc[2000:2023]
-regional_rate_hist  = (total_enroll_hist / total_pop_hist_5cty).dropna()
+regional_rate_hist = (total_enroll_hist / total_pop_hist_5cty).dropna()
 
-HIST_MAX_PENETRATION  = float(regional_rate_hist.max())
-PENETRATION_CEILING   = HIST_MAX_PENETRATION * 1.02    # 2% buffer above peak
+HIST_MAX_PENETRATION = float(regional_rate_hist.max())
+PENETRATION_CEILING = HIST_MAX_PENETRATION * 1.02  # 2% buffer above peak
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Step 7: Final Forecast Loops
@@ -762,10 +867,10 @@ PENETRATION_CEILING   = HIST_MAX_PENETRATION * 1.02    # 2% buffer above peak
 FORECAST_YEARS = list(range(2024, 2061))
 df_total_gpi_pop = df_gpi_ext[TARGET_COUNTIES].sum(axis=1)
 
-forecast_records   = []
+forecast_records = []
 regional_rate_proj = []
 
-for mod_type in ["Linear", "Log", "Logistic"]:
+for mod_type in ["Linear", "Log", "Logistic", "Linear (Stable Flagships)"]:
     for year in FORECAST_YEARS:
         t = year - 1999
 
@@ -773,21 +878,37 @@ for mod_type in ["Linear", "Log", "Logistic"]:
         for key in SCHOOL_KEYS:
             model = models_dict[mod_type][key]
 
-            if isinstance(model, dict) and model.get("type") == "logistic":
-                model_rate = logistic_func(t, *model["popt"])
-            elif mod_type in ["Linear", "Logistic"]:
-                model_rate = float(model.predict(np.array([[t]]))[0])
+            if isinstance(model, dict) and model.get("type") == "direct_enrollment":
+                # Enrollment predicted directly — no population multiplier
+                model_enroll = float(model["model"].predict(np.array([[t]]))[0])
+                raw[key] = max(0.0, model_enroll + shift_factors[mod_type][key])
             else:
-                model_rate = float(model.predict(np.array([[np.log(t)]]))[0])
+                if isinstance(model, dict) and model.get("type") == "constant_rate":
+                    model_rate = model["value"]  # Flat rate
+                elif isinstance(model, dict) and model.get("type") == "logistic":
+                    model_rate = logistic_func(t, *model["popt"])
+                elif mod_type in ["Linear", "Logistic", "Linear (Stable Flagships)"]:
+                    model_rate = float(model.predict(np.array([[t]]))[0])
+                else:
+                    model_rate = float(model.predict(np.array([[np.log(t)]]))[0])
 
-            shifted_rate = model_rate + shift_factors[mod_type][key]
-            gpi_pop = float(df_weighted_proj.loc[year, key])
-            raw[key] = max(0.0, shifted_rate * gpi_pop)
+                # Apply shift decay ONLY to WESTMIN
+                if key == "WESTMIN":
+                    decay_factor = (
+                        max(0.0, 1.0 - (year - 2023) / 10.0) if CALIB_SHIFT else 0.0
+                    )
+                    active_shift = shift_factors[mod_type][key] * decay_factor
+                else:
+                    active_shift = shift_factors[mod_type][key]
+
+                # Multiply by population to get enrollment
+                gpi_pop = float(df_weighted_proj.loc[year, key])
+                raw[key] = max(0.0, (model_rate + active_shift) * gpi_pop)
 
         # Regional Control Total Logic
-        total_raw     = sum(raw.values())
+        total_raw = sum(raw.values())
         total_gpi_pop = float(df_total_gpi_pop.loc[year])
-        proj_rate     = total_raw / total_gpi_pop
+        proj_rate = total_raw / total_gpi_pop
         ceiling_enroll = PENETRATION_CEILING * total_gpi_pop
 
         if total_raw > ceiling_enroll:
@@ -797,37 +918,39 @@ for mod_type in ["Linear", "Log", "Logistic"]:
             scale_factor = 1.0
             capped = False
 
-        regional_rate_proj.append({
-            "Model": mod_type,
-            "Year":  year,
-            "Rate":  proj_rate * scale_factor,
-            "Type":  "Projected",
-            "Capped": capped,
-        })
+        regional_rate_proj.append(
+            {
+                "Model": mod_type,
+                "Year": year,
+                "Rate": proj_rate * scale_factor,
+                "Type": "Projected",
+                "Capped": capped,
+            }
+        )
 
         for key, raw_enroll in raw.items():
             final_enroll = int(round(raw_enroll * scale_factor))
-            forecast_records.append({
-                "Model":        mod_type,
-                "Year":         year,
-                "Univ_Code":    key,
-                "University":   DISPLAY_NAMES[key],
-                "Enrollment":   final_enroll,
-                "Type":         "Projected",
-            })
+            forecast_records.append(
+                {
+                    "Model": mod_type,
+                    "Year": year,
+                    "Univ_Code": key,
+                    "University": DISPLAY_NAMES[key],
+                    "Enrollment": final_enroll,
+                    "Type": "Projected",
+                }
+            )
 
 df_forecast = pd.DataFrame(forecast_records)
 df_forecast.to_csv(PATHS["forecast_output"], index=False)
 
 # Combine Historical (static) with Projected (multidimensional) for OJS Export
-df_history_long = (
-    df_enroll_ipeds
-    .melt(id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment")
-    .dropna()
-)
+df_history_long = df_enroll_ipeds.melt(
+    id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
+).dropna()
 df_history_long["University"] = df_history_long["Univ_Code"].map(DISPLAY_NAMES)
 df_history_long["Type"] = "Historical"
-df_history_long["Model"] = "All" # Serves as catch-all base
+df_history_long["Model"] = "All"  # Serves as catch-all base
 
 df_final_trend = pd.concat(
     [
@@ -846,10 +969,10 @@ df_regional_rate_long["Model"] = "All"
 df_regional_rate_proj = pd.DataFrame(regional_rate_proj)
 
 ojs_define(
-    data_final_forecast     = df_final_trend.to_dict(orient="records"),
-    data_regional_rate_hist = df_regional_rate_long.to_dict(orient="records"),
-    data_regional_rate_proj = df_regional_rate_proj.to_dict(orient="records"),
-    control_ceiling         = float(PENETRATION_CEILING),
+    data_final_forecast=df_final_trend.to_dict(orient="records"),
+    data_regional_rate_hist=df_regional_rate_long.to_dict(orient="records"),
+    data_regional_rate_proj=df_regional_rate_proj.to_dict(orient="records"),
+    control_ceiling=float(PENETRATION_CEILING),
 )
 ```
 
@@ -859,10 +982,10 @@ ojs_define(
 
 ```{ojs}
 //| label: scenario-toggles
-viewof selected_model = Inputs.radio(["Log", "Linear", "Logistic"], {
-  label: "Regression Model",
-  value: "Log"
-})
+viewof selected_model = Inputs.radio(
+  ["Linear", "Log", "Logistic", "Linear (Stable Flagships)"],
+  { label: "Regression Model", value: "Linear (Stable Flagships)" }
+)
 ```
 
 ### Regional Control Total
@@ -921,6 +1044,9 @@ viewof selected_model = Inputs.radio(["Log", "Linear", "Logistic"], {
 ```
 
 ### Enrollment Forecast by University
+
+**Note:** Solid lines = historical IPEDS data (2000–2023). Dashed lines = model forecast (2024–2060). Gray dashed vertical line marks the start of the forecast period.
+
 ```{ojs}
 //| label: fig-enrollment-forecast
 //| fig-cap: "College Enrollment Forecast by University (2000–2060)"
@@ -929,11 +1055,18 @@ Plot.plot({
   marks: [
     Plot.ruleY([0]),
     Plot.ruleX([2024], { stroke: "gray", strokeDasharray: "2,2", strokeOpacity: 0.5 }),
+    // Historical Line (Solid)
     Plot.line(data_final_forecast, {
-      filter: d => d.Type === "Historical" || (d.Type === "Projected" && d.Model === selected_model),
+      filter: d => d.Type === "Historical",
+      x: "Year", y: "Enrollment", z: "University",
+      stroke: "University", strokeWidth: 2.5
+    }),
+    // Projected Line (Dashed)
+    Plot.line(data_final_forecast, {
+      filter: d => d.Type === "Projected" && d.Model === selected_model,
       x: "Year", y: "Enrollment", z: "University",
       stroke: "University", strokeWidth: 2.5,
-      strokeDasharray: d => d.Type === "Projected" ? "5,5" : "none"
+      strokeDasharray: "5,5"
     }),
     Plot.text(data_final_forecast, Plot.selectLast({
       filter: d => d.Type === "Historical" || (d.Type === "Projected" && d.Model === selected_model),
