@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://wfrcanalytics.github.io/6-CollegeControlTotals.html</loc>
-    <lastmod>2026-02-21T00:04:48.520Z</lastmod>
+    <loc>https://wfrcanalytics.github.io/index.html</loc>
+    <lastmod>2026-03-02T18:56:24.105Z</lastmod>
   </url>
   <url>
-    <loc>https://wfrcanalytics.github.io/4-CollegeCampusDisaggregation.html</loc>
-    <lastmod>2026-01-18T03:04:31.206Z</lastmod>
+    <loc>https://wfrcanalytics.github.io/5-CollegeEnrollmentIPEDS.html</loc>
+    <lastmod>2026-02-11T20:12:32.366Z</lastmod>
   </url>
   <url>
     <loc>https://wfrcanalytics.github.io/3-TAZ Group Quarters.html</loc>
     <lastmod>2026-01-01T02:45:23.526Z</lastmod>
   </url>
   <url>
-    <loc>https://wfrcanalytics.github.io/5-CollegeEnrollmentIPEDS.html</loc>
-    <lastmod>2026-02-11T20:12:32.366Z</lastmod>
+    <loc>https://wfrcanalytics.github.io/4-CollegeCampusDisaggregation.html</loc>
+    <lastmod>2026-01-18T03:04:31.206Z</lastmod>
+  </url>
+  <url>
+    <loc>https://wfrcanalytics.github.io/6-CollegeControlTotals.html</loc>
+    <lastmod>2026-03-02T17:14:19.894Z</lastmod>
   </url>
 </urlset>

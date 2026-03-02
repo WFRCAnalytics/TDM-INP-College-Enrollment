@@ -1,0 +1,25 @@
+---
+title: "College Enrollment Distribution and Forecast"
+subtitle: Analyzing the College Enrollment in WF-TDM region into the horizon year.
+author:
+ - name: Pukar Bhandari
+   email: pukar.bhandari@wfrc.utah.gov
+   affiliation:
+     - name: Wasatch Front Regional Council
+       url: "https://wfrc.utah.gov/"
+date: "`r Sys.Date()`"
+---
+
+[0-Download from StreetLight.ipynb](0-Download%20from%20StreetLight.ipynb)
+
+[1-StreetlightTAZ-to-ZIPCode.ipynb](1-StreetlightTAZ-to-ZIPCode.ipynb)
+
+[2-Public Enrollment Data 2020 by Zip Code.ipynb](2-Public%20Enrollment%20Data%202020%20by%20Zip%20Code.ipynb)
+
+[3-TAZ Group Quarters.qmd](3-TAZ%20Group%20Quarters.qmd): Allocate Group Quarter Population to TAZ using 2023 ACS Data (In Progress)
+
+[4-CollegeCampusDisaggregation.qmd](4-CollegeCampusDisaggregation.qmd): Disaggregating university enrollment to TAZ level using StreetLight data
+
+[5-CollgeEnrollmentIPEDS.qmd](5-CollegeEnrollmentIPEDS.qmd): Fetching Historic College Enrollment Data from NCES Integrated Postsecondary Education Data System (IPEDS)
+
+[6-CollegeControlTotals.qmd](6-CollegeControlTotals.qmd): Forecasting the College Enrollment in WF-TDM region into the horizon year
