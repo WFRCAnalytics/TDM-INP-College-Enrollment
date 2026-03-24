@@ -932,6 +932,245 @@ df_forecast_adjusted = pd.concat(
 
 ---
 
+# Policy Adjustments
+
+## BYU Medical School (2027-2030)
+
+**Background:** Brigham Young University is planning to integrate a Medical School starting in 2027. The medical school is expected to enroll 100 students annually.
+
+**Enrollment Impact:**
+- **2027:** +100 students (first year class)
+- **2028:** +100 students (second year class added; total +200)
+- **2029:** +100 students (third year class added; total +300)
+- **2030:** +100 students (fourth year class added; total +400)
+- **2031 onwards:** Steady state at +400 students (first cohort graduates as new cohort enters)
+
+This adjustment is applied to BYU's flagship override forecast to reflect the planned expansion.
+
+```{python}
+# BYU Medical School Enrollment Adjustment
+MEDICAL_SCHOOL_START_YEAR = 2027
+MEDICAL_SCHOOL_ANNUAL_ENROLLMENT = 100
+MEDICAL_SCHOOL_PROGRAM_LENGTH = 4  # MD program is 4 years
+
+# Apply cumulative enrollment adjustment
+for year in FORECAST_YEARS:
+    if year >= MEDICAL_SCHOOL_START_YEAR:
+        # Calculate cumulative enrollment (capped at steady-state)
+        years_since_start = year - MEDICAL_SCHOOL_START_YEAR
+        cohorts_enrolled = min(years_since_start + 1, MEDICAL_SCHOOL_PROGRAM_LENGTH)
+        medical_enrollment = cohorts_enrolled * MEDICAL_SCHOOL_ANNUAL_ENROLLMENT
+
+        # Apply adjustment to BYU forecast
+        mask = (df_forecast_adjusted['Univ_Code'] == 'BYU') & \
+               (df_forecast_adjusted['Year'] == year)
+
+        df_forecast_adjusted.loc[mask, 'Enrollment'] += medical_enrollment
+
+# Log the adjustment
+print(f"Applied BYU Medical School adjustment:")
+print(f"  - Annual enrollment: {MEDICAL_SCHOOL_ANNUAL_ENROLLMENT} students/year")
+print(f"  - Start year: {MEDICAL_SCHOOL_START_YEAR}")
+print(f"  - Ramp-up period: {MEDICAL_SCHOOL_PROGRAM_LENGTH} years (2027-2030)")
+print(f"  - Steady-state enrollment: {MEDICAL_SCHOOL_PROGRAM_LENGTH * MEDICAL_SCHOOL_ANNUAL_ENROLLMENT} students (2031+)")
+```
+
+---
+
+# Campus-Level Disaggregation
+
+## Load USHE 2025 Campus Enrollment Data
+
+For Home Based College (HBC) travel modeling, we need to disaggregate institution-level forecasts to specific campus locations. We use 2025 actual enrollment from USHE to calculate the percentage of students at each campus, then apply those percentages to all forecast years.
+
+```{python}
+# Load USHE 2025 enrollment data
+df_ushe_2025 = pd.read_excel(
+    "data/USHE 2025 Enrollment/WFRC Data Request_Final.xlsx",
+    sheet_name="Sheet1"
+)
+
+# Filter to Fall 2025 term only for consistency
+df_ushe_fall_2025 = df_ushe_2025[
+    (df_ushe_2025['Academic Year'] == 2025) &
+    (df_ushe_2025['Term'] == 'Fall')
+].copy()
+
+# Sum headcount by Institution and Site
+df_campus_enrollment = df_ushe_fall_2025.groupby(['Institution', 'Site'])['Headcount'].sum().reset_index()
+
+print(f"Total USHE records loaded: {len(df_ushe_2025)}")
+print(f"Fall 2025 records: {len(df_ushe_fall_2025)}")
+print(f"Unique campuses: {len(df_campus_enrollment)}")
+```
+
+## Define Campus Mapping
+
+```{python}
+# Map USHE Site names to campus codes for target institutions
+CAMPUS_MAPPING = {
+    'Salt Lake Community College': {
+        'Main Campus': 'SLCC_MAIN',
+        'SLCC - Jordan Campus': 'SLCC_JD',
+        'SLCC - Larry H. Miller Campus': 'SLCC_ML',
+        'SLCC - South City Center': 'SLCC_SC',
+    },
+    'University Of Utah': {
+        'Main Campus': 'UOFU_Main',
+    },
+    'Utah Valley University': {
+        'Main Campus': 'UVU_Main',
+        # Note: UVU_Lehi, UVU_Payson, UVU_Vineyard handled separately
+    },
+    'Weber State University': {
+        'Main Campus': 'WSU_Main',
+        'WSU - Davis Center': 'WSU_Davis',
+    }
+}
+
+# Single-campus institutions (no disaggregation needed)
+SINGLE_CAMPUS = {
+    'Brigham Young University': 'BYU',
+    'Ensign College': 'ENSIGN',
+    'Westminster College': 'WESTMIN',
+}
+```
+
+## Calculate Campus Percentages
+
+```{python}
+# Calculate percentage splits for each institution
+campus_percentages = {}
+
+for institution, campus_map in CAMPUS_MAPPING.items():
+    # Get total enrollment for this institution
+    inst_data = df_campus_enrollment[df_campus_enrollment['Institution'] == institution]
+
+    # Get enrollment for mapped campuses only
+    mapped_campuses = list(campus_map.keys())
+    mapped_data = inst_data[inst_data['Site'].isin(mapped_campuses)]
+
+    total_mapped = mapped_data['Headcount'].sum()
+
+    if total_mapped > 0:
+        for site, campus_code in campus_map.items():
+            site_enrollment = mapped_data[mapped_data['Site'] == site]['Headcount'].sum()
+            percentage = site_enrollment / total_mapped if total_mapped > 0 else 0
+            campus_percentages[campus_code] = percentage
+            print(f"{campus_code}: {site_enrollment:,} students ({percentage:.1%})")
+
+# Display summary
+print("\n=== Campus Split Percentages (2025) ===")
+for campus, pct in sorted(campus_percentages.items()):
+    print(f"{campus}: {pct:.1%}")
+```
+
+## Apply Disaggregation to Forecast
+
+```{python}
+# Map institution codes to USHE names
+INSTITUTION_NAME_MAP = {
+    'SLCC': 'Salt Lake Community College',
+    'UofU': 'University Of Utah',
+    'UVU': 'Utah Valley University',
+    'WSU': 'Weber State University',
+}
+
+# Create disaggregated forecast records
+disaggregated_records = []
+
+for _, row in df_forecast_adjusted.iterrows():
+    year = row['Year']
+    univ_code = row['Univ_Code']
+    total_enrollment = row['Enrollment']
+
+    # Handle single-campus institutions
+    if univ_code in SINGLE_CAMPUS.values():
+        disaggregated_records.append({
+            'YEAR': year,
+            univ_code: total_enrollment
+        })
+
+    # Handle multi-campus institutions
+    elif univ_code in INSTITUTION_NAME_MAP:
+        institution = INSTITUTION_NAME_MAP[univ_code]
+        campus_map = CAMPUS_MAPPING.get(institution, {})
+
+        record = {'YEAR': year}
+
+        for site, campus_code in campus_map.items():
+            percentage = campus_percentages.get(campus_code, 0)
+            campus_enrollment = int(round(total_enrollment * percentage))
+            record[campus_code] = campus_enrollment
+
+        disaggregated_records.append(record)
+
+# Combine all records by year
+df_disaggregated = pd.DataFrame(disaggregated_records)
+df_disaggregated = df_disaggregated.groupby('YEAR').sum().reset_index()
+
+print(f"\nDisaggregated {len(df_disaggregated)} years of forecasts")
+print(f"Campus columns: {[c for c in df_disaggregated.columns if c != 'YEAR']}")
+```
+
+## Add UVU Special Campuses (Placeholder)
+
+```{python}
+# UVU satellite campuses (Lehi, Payson, Vineyard) are handled separately
+# For now, initialize as zero - these will be populated from a separate data source
+
+# Initialize columns if they don't exist
+for campus in ['UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard']:
+    if campus not in df_disaggregated.columns:
+        df_disaggregated[campus] = 0
+
+print("\nNote: UVU_Lehi, UVU_Payson, UVU_Vineyard initialized to 0")
+print("These campuses require separate data source for enrollment projections")
+```
+
+## Reorder Columns to Match Target Format
+
+```{python}
+# Define desired column order
+COLUMN_ORDER = [
+    'YEAR', 'BYU', 'ENSIGN',
+    'SLCC_MAIN', 'SLCC_JD', 'SLCC_ML', 'SLCC_SC',
+    'UOFU_Main',
+    'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard',
+    'WSU_Main', 'WSU_Davis',
+    'WESTMIN'
+]
+
+# Add any missing columns as zeros
+for col in COLUMN_ORDER:
+    if col not in df_disaggregated.columns:
+        df_disaggregated[col] = 0
+
+# Reorder and select only desired columns
+df_campus_final = df_disaggregated[COLUMN_ORDER].copy()
+
+# Sort by year
+df_campus_final = df_campus_final.sort_values('YEAR').reset_index(drop=True)
+
+# Display preview
+print("\n=== Campus-Level Enrollment Forecast (First 5 Years) ===")
+print(df_campus_final.head())
+
+print(f"\n=== Campus-Level Enrollment Forecast (Last 5 Years) ===")
+print(df_campus_final.tail())
+```
+
+## Export Campus-Level Forecast
+
+```{python}
+# Export disaggregated campus-level forecast
+campus_output_path = PATHS['forecast_output'].parent / 'enrollment_forecast_by_campus_2024_2060.csv'
+df_campus_final.to_csv(campus_output_path, index=False)
+print(f"\nCampus-level forecast saved to: {campus_output_path}")
+```
+
+---
+
 # OJS Data Preparation & Exports
 
 ```{python}
@@ -1200,4 +1439,5 @@ Plot.plot({
 
 ::: {.callout-tip title="Download the output file:"}
 [enrollment_forecast_2024_2060.csv](./intermediate/enrollment_forecast_2024_2060.csv)
+[enrollment_forecast_by_campus_2024_2060.csv](./intermediate/enrollment_forecast_by_campus_2024_2060.csv)
 :::
