@@ -445,7 +445,7 @@ window.Quarto = {
 <li><strong><code>gq_dist_threshold</code></strong>: When assigning census blocks (dorms) to campuses, we only consider blocks within 4,000 feet of a campus boundary to ensure accuracy.</li>
 <li><strong><code>magic_fill_value</code></strong>: A specific fallback weight (approx. 0.74) used when StreetLight data is missing for a specific Zip code, ensuring no enrollment data is lost due to gaps in the t</li>
 </ul>
-<div id="2c8b12ba" class="cell" data-message="false" data-execution_count="1">
+<div id="5ef5926c" class="cell" data-message="false" data-execution_count="1">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
@@ -497,7 +497,7 @@ window.Quarto = {
 <p>Before processing trips, we need to define where students could possibly live. We load the master TAZ shapefile and join it with Socio-Economic (SE) data.</p>
 <p>We calculate a <code>studentRatio</code> for each TAZ: <span class="math display"> \text{Student Ratio} = \frac{\text{Total Households}}{\text{Total Households} + \text{Total Employment}} </span></p>
 <p>This ratio acts as a weighting factor later. It assumes that a trip originating from a TAZ with high employment (like a business park) is less likely to be a “home-based” student trip than a trip from a purely residential TAZ. We filter out any TAZ with fewer than <code>r CONSTANTS$min_hh_threshold</code> households.</p>
-<div id="8a81bd1e" class="cell" data-message="false" data-execution_count="2">
+<div id="6c3d4199" class="cell" data-message="false" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load SE Data and calculate the residential/student weight</span></span>
@@ -530,7 +530,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <li><strong>Campus Polygons:</strong> We define the physical boundaries of the 5 main universities (<code>sl_college_poly</code>). This allows us to spatially “snap” nearby dorms to the correct school.</li>
 <li><strong>Trip Origins:</strong> We generate centroids for all StreetLight zones (<code>sl_centroids_valid</code>). These points represent the start/end locations for the trip data we will process later.</li>
 </ol>
-<div id="7cf642b5" class="cell" data-execution_count="3">
+<div id="efb0264e" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load raw StreetLight Polygons</span></span>
@@ -565,7 +565,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <h2 data-number="2.3" class="anchored" data-anchor-id="assigning-group-quarters-dorms"><span class="header-section-number">2.3</span> Assigning Group Quarters (Dorms)</h2>
 <p>Students living in dormitories (Group Quarters or GQ) are a “Fixed Population”—we know exactly where they are. We load Census Block data containing student GQ counts.</p>
 <p>Using a nearest-neighbor spatial join, we assign each census block to the closest university campus. To avoid false positives (e.g., a nursing home being misidentified as a dorm), we enforce a strict distance threshold of <code>python CONSTANTS['gq_dist_threshold']</code> feet. Blocks further away are dropped.</p>
-<div id="cb90f061" class="cell" data-execution_count="4">
+<div id="d48d49ec" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load Block Data (Points representing census blocks with students)</span></span>
@@ -578,7 +578,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>block_polys[<span class="st">'geometry'</span>] <span class="op">=</span> block_polys.centroid</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="fd32044d" class="cell" data-execution_count="5">
+<div id="9dbb6e1b" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Find nearest campus. If ties exist (equidistant), groupby takes the first one found.</span></span>
@@ -595,7 +595,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>)[[<span class="st">"COLLEGE"</span>, <span class="st">"gq_student"</span>, <span class="st">"geometry"</span>]]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="c3b7c4c3" class="cell" data-execution_count="6">
+<div id="ac0a870d" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Aggregate these GQ totals to the TAZ level</span></span>
@@ -613,7 +613,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <h2 data-number="2.4" class="anchored" data-anchor-id="creating-the-trip-probability-grid-streetlight"><span class="header-section-number">2.4</span> Creating the Trip Probability Grid (StreetLight)</h2>
 <p>This step builds the “Probability Map” for where commuter students live. We load the raw Origin-Destination (OD) trip data from StreetLight.</p>
 <p>We filter for <strong>Mid-Day Weekday</strong> trips (9am - 3pm, Tue-Thu), which are most representative of students attending classes. We then weight these trips using the <code>studentRatio</code> calculated earlier. This down-weights trips from commercial zones and up-weights trips from residential neighborhoods.</p>
-<div id="2fb0baab" class="cell" data-execution_count="7">
+<div id="73e9342a" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load and process raw trip data</span></span>
@@ -675,7 +675,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <section id="preparing-zip-code-geometry-enrollment" class="level2" data-number="3.1">
 <h2 data-number="3.1" class="anchored" data-anchor-id="preparing-zip-code-geometry-enrollment"><span class="header-section-number">3.1</span> Preparing Zip Code Geometry &amp; Enrollment</h2>
 <p>We load the Zip Code boundaries and the enrollment data. We pre-aggregate the enrollment CSV to ensuring uniqueness (one row per Zip/College) to prevent join errors later.</p>
-<div id="436a5792" class="cell" data-execution_count="8">
+<div id="8920868e" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Load Zip Code Boundaries</span></span>
@@ -693,7 +693,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="f2d5a111" class="cell" data-execution_count="9">
+<div id="b6122e50" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Prepare Enrollment Data</span></span>
@@ -711,7 +711,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <section id="calculating-net-demand" class="level2" data-number="3.2">
 <h2 data-number="3.2" class="anchored" data-anchor-id="calculating-net-demand"><span class="header-section-number">3.2</span> Calculating Net Demand</h2>
 <p>Here we spatially join our assigned dorm blocks to the Zip Codes to determine how many “Fixed” students are in each Zip. We subtract this from the total enrollment to find the number of “Commuter” students we need to distribute.</p>
-<div id="dbddf508" class="cell" data-execution_count="10">
+<div id="6e36ee83" class="cell" data-execution_count="10">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Calculate GQ (Dorm) students per Zip Code</span></span>
@@ -727,7 +727,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="3cdc2982" class="cell" data-execution_count="11">
+<div id="6d3a293e" class="cell" data-execution_count="11">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. Calculate Net Demand (Total Enrollment - Dorms)</span></span>
@@ -757,7 +757,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <section id="distributing-commuters-to-tazs" class="level2" data-number="3.3">
 <h2 data-number="3.3" class="anchored" data-anchor-id="distributing-commuters-to-tazs"><span class="header-section-number">3.3</span> Distributing Commuters to TAZs</h2>
 <p>Finally, we apply the StreetLight trip distribution. We figure out which TAZs are in which Zip Code, calculate their share of the total trips in that Zip, and assign the Net Demand accordingly.</p>
-<div id="0afe6d9e" class="cell" data-execution_count="12">
+<div id="44b8ee10" class="cell" data-execution_count="12">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 5. Distribute Net Demand to TAZs</span></span>
@@ -809,7 +809,7 @@ Filtered (Valid) TAZ Count: 2412</code></pre>
 <section id="validation-public-schools" class="level2" data-number="3.4">
 <h2 data-number="3.4" class="anchored" data-anchor-id="validation-public-schools"><span class="header-section-number">3.4</span> Validation: Public Schools</h2>
 <p>We perform a quick check to ensure the distributed student counts roughly match the input net demand. Small discrepancies are expected due to Zip Codes with enrollment but no corresponding StreetLight trips (lost data).</p>
-<div id="c5e4f761" class="cell" data-execution_count="13">
+<div id="0474afcf" class="cell" data-execution_count="13">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>public_check <span class="op">=</span> (</span>
@@ -855,7 +855,7 @@ Note
 </div>
 </div>
 <p>In order to verify that this is just “Lost Zips” and not a code bug, we can run this diagnostic snippet. It will show you exactly which Zip Codes had demand but zero StreetLight trips.</p>
-<div id="02847a6c" class="cell" data-execution_count="14">
+<div id="eb0cb347" class="cell" data-execution_count="14">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Identify which Zips actually have StreetLight trips</span></span>
@@ -907,7 +907,7 @@ Note
 <li><strong>Calculate Net Demand:</strong> We start with the regional <code>Control Total</code> for the school and subtract the total number of Dorm Students found in Step 2.3.</li>
 <li><strong>Distribute:</strong> We spread the remaining students across <strong>all</strong> valid TAZs in the entire region. The spread is proportional to the weighted StreetLight trips, but unlike public schools, it is not constrained by Zip Code boundaries.</li>
 </ol>
-<div id="05cbfaea" class="cell" data-execution_count="15">
+<div id="510b7224" class="cell" data-execution_count="15">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Calculate Net Demand (Region Total - Total Dorms)</span></span>
@@ -921,7 +921,7 @@ Note
 <span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="201cc15d" class="cell" data-execution_count="16">
+<div id="184b22df" class="cell" data-execution_count="16">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Distribute based on Region-wide Trip Shares</span></span>
@@ -950,7 +950,7 @@ Note
 <section id="validation-private-schools" class="level2" data-number="4.1">
 <h2 data-number="4.1" class="anchored" data-anchor-id="validation-private-schools"><span class="header-section-number">4.1</span> Validation: Private Schools</h2>
 <p>Since the distribution is regional and not constrained by missing Zip data, the input and output totals should match exactly.</p>
-<div id="f9ddec6b" class="cell" data-execution_count="17">
+<div id="f66a6f2b" class="cell" data-execution_count="17">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>private_check <span class="op">=</span> (</span>
@@ -984,7 +984,7 @@ Note
 <li><strong>Add Dorms:</strong> We join the “Fixed” Group Quarter students (calculated in Step 2.3) back to their respective TAZs.</li>
 <li><strong>Format:</strong> We pivot the data into a “Wide” format (TAZ rows x College columns), creating the final matrix required for the travel demand model.</li>
 </ol>
-<div id="3f114b5e" class="cell" data-execution_count="18">
+<div id="98496325" class="cell" data-execution_count="18">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Combine Public and Private distributions</span></span>
@@ -1016,7 +1016,7 @@ Note
 <span id="cb22-27"><a href="#cb22-27" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="62a301a8" class="cell" data-execution_count="19">
+<div id="3888b385" class="cell" data-execution_count="19">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Pivot to Wide Format (One column per college)</span></span>
@@ -1076,7 +1076,7 @@ COLLEGE  UVU_MAIN  UOFU_MAIN  SLCC_JD  SLCC_ML
 26              0          0        0        0  </code></pre>
 </div>
 </div>
-<div id="fabdd9d1" class="cell" data-execution_count="20">
+<div id="793f9228" class="cell" data-execution_count="20">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Export</span></span>
