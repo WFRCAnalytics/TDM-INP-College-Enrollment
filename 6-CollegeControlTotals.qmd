@@ -73,11 +73,13 @@ PATHS = {
     ),
     "zip_code": Path("data/UGRC ZIP/UtahZipCodeAreas_-1977770497264301863.gpkg"),
     "enroll_by_zip": Path("intermediate/TotEnrolByZipByCollege.csv"),
+    "ushe_2025": Path("data/USHE 2025 Enrollment/WFRC Data Request_Final.xlsx"),
     # NHGIS data
     "nhgis_dir": Path("data/NHGIS"),
     # Output paths
     "model_diagnostics": Path("intermediate/model_diagnostics.csv"),
     "forecast_output": Path("intermediate/enrollment_forecast_2024_2060.csv"),
+    "campus_forecast_output": Path("intermediate/enrollment_forecast_by_campus_2000_2060.csv"),
 }
 
 # WF-TDM region counties
@@ -977,53 +979,51 @@ print(f"  - Steady-state enrollment: {MEDICAL_SCHOOL_PROGRAM_LENGTH * MEDICAL_SC
 
 ---
 
-# Campus-Level Disaggregation
+# Campus-Level Disaggregation (2000-2060)
 
-## Load USHE 2025 Campus Enrollment Data
+For Home Based College (HBC) travel modeling, we disaggregate institution-level forecasts to specific campus locations across the full time series (2000-2060).
 
-For Home Based College (HBC) travel modeling, we need to disaggregate institution-level forecasts to specific campus locations. We use 2025 actual enrollment from USHE to calculate the percentage of students at each campus, then apply those percentages to all forecast years.
+**Methodology:**
+- **Non-UVU institutions**: Apply 2025 USHE campus splits to all years (2000-2060)
+- **UVU campuses**: Apply time-varying proportions from historical spatial planning data
+
+## Step 1: Load USHE 2025 Campus Enrollment Data
 
 ```{python}
 # Load USHE 2025 enrollment data
 df_ushe_2025 = pd.read_excel(
-    "data/USHE 2025 Enrollment/WFRC Data Request_Final.xlsx",
+    PATHS["ushe_2025"],
     sheet_name="Sheet1"
 )
 
 print(f"Total USHE records loaded: {len(df_ushe_2025)}")
-print(f"Columns: {df_ushe_2025.columns.tolist()}")
-print(f"\nUnique institutions: {df_ushe_2025['Institution'].unique()}")
 print(f"\nUnique terms: {sorted(df_ushe_2025['Term'].unique())}")
 print(f"Unique years: {sorted(df_ushe_2025['Academic Year'].unique())}")
 
-# Filter to 2025 academic year
-# Note: Term 2 is typically Fall semester in Utah's system
-# We'll use Term 2 for Fall 2025 enrollment
+# Filter to Academic Year 2025, Term 2 (Fall semester)
 df_ushe_fall_2025 = df_ushe_2025[
     (df_ushe_2025['Academic Year'] == 2025) &
-    (df_ushe_2025['Term'] == 2)  # Term 2 = Fall
+    (df_ushe_2025['Term'] == 2)
 ].copy()
 
-print(f"\nFiltered to Academic Year 2025, Term 2 (Fall): {len(df_ushe_fall_2025)} records")
+print(f"\nFiltered to Fall 2025: {len(df_ushe_fall_2025)} records")
 
 # Aggregate headcount by Institution and Site (sum across all ZIP codes)
 df_campus_enrollment = df_ushe_fall_2025.groupby(['Institution', 'Site'])['Headcount'].sum().reset_index()
 
-print(f"\nUnique campuses after aggregation: {len(df_campus_enrollment)}")
-print("\n=== Sample Campus Enrollments ===")
-print(df_campus_enrollment.head(15).to_string())
+print(f"Unique campuses: {len(df_campus_enrollment)}")
 
 # Show totals by institution
-print("\n=== Total Enrollment by Institution ===")
+print("\n=== Total Enrollment by Institution (Fall 2025) ===")
 inst_totals = df_campus_enrollment.groupby('Institution')['Headcount'].sum().sort_values(ascending=False)
 for inst, count in inst_totals.items():
     print(f"{inst}: {count:,}")
 ```
 
-## Define Campus Mapping
+## Step 2: Define Campus Mapping (Non-UVU Institutions)
 
 ```{python}
-# Map USHE Site names to campus codes for target institutions
+# Map USHE Site names to campus codes for non-UVU institutions
 CAMPUS_MAPPING = {
     'Salt Lake Community College': {
         'Main Campus': 'SLCC_MAIN',
@@ -1034,10 +1034,6 @@ CAMPUS_MAPPING = {
     'University Of Utah': {
         'Main Campus': 'UOFU_Main',
     },
-    'Utah Valley University': {
-        'Main Campus': 'UVU_Main',
-        # Note: UVU_Lehi, UVU_Payson, UVU_Vineyard handled separately
-    },
     'Weber State University': {
         'Main Campus': 'WSU_Main',
         'WSU - Davis Center': 'WSU_Davis',
@@ -1045,42 +1041,35 @@ CAMPUS_MAPPING = {
 }
 
 # Single-campus institutions (no disaggregation needed)
-SINGLE_CAMPUS = {
-    'Brigham Young University': 'BYU',
-    'Ensign College': 'ENSIGN',
-    'Westminster College': 'WESTMIN',
+SINGLE_CAMPUS_CODES = ['BYU', 'ENSIGN', 'WESTMIN']
+
+# Map institution codes to USHE names
+INSTITUTION_NAME_MAP = {
+    'SLCC': 'Salt Lake Community College',
+    'UofU': 'University Of Utah',
+    'WSU': 'Weber State University',
 }
 ```
 
-## Calculate Campus Percentages
+## Step 3: Calculate Campus Percentages (Non-UVU)
 
 ```{python}
-# Calculate percentage splits for each institution
+# Calculate percentage splits for non-UVU institutions
 campus_percentages = {}
 
-print("\n=== Calculating Campus Percentages ===")
+print("\n=== Calculating Campus Percentages (Non-UVU) ===")
 
 for institution, campus_map in CAMPUS_MAPPING.items():
     print(f"\n{institution}:")
 
-    # Get total enrollment for this institution
     inst_data = df_campus_enrollment[df_campus_enrollment['Institution'] == institution]
-    print(f"  Total records found: {len(inst_data)}")
 
     if len(inst_data) == 0:
-        print(f"  WARNING: No data found for '{institution}'")
-        print(f"  Available institutions in data: {df_campus_enrollment['Institution'].unique().tolist()}")
+        print(f"  WARNING: No data found")
         continue
-
-    # Show all sites for this institution
-    print(f"  All sites in data:")
-    for _, row in inst_data.iterrows():
-        print(f"    - '{row['Site']}': {row['Headcount']:,} students")
 
     # Get enrollment for mapped campuses only
     mapped_campuses = list(campus_map.keys())
-    print(f"  Looking for mapped sites: {mapped_campuses}")
-
     mapped_data = inst_data[inst_data['Site'].isin(mapped_campuses)]
 
     total_mapped = mapped_data['Headcount'].sum()
@@ -1091,115 +1080,206 @@ for institution, campus_map in CAMPUS_MAPPING.items():
             site_enrollment = mapped_data[mapped_data['Site'] == site]['Headcount'].sum()
             percentage = site_enrollment / total_mapped if total_mapped > 0 else 0
             campus_percentages[campus_code] = percentage
-            print(f"    ✓ {campus_code}: {site_enrollment:,} students ({percentage:.1%})")
-    else:
-        print(f"  WARNING: No enrollment found for any mapped campuses")
-        print(f"  This usually means site names don't match between data and mapping")
+            print(f"    {campus_code}: {site_enrollment:,} students ({percentage:.1%})")
 
-# Display final summary
 print("\n" + "="*60)
-print("=== Final Campus Split Percentages ===")
-print("="*60)
-if len(campus_percentages) == 0:
-    print("ERROR: No campus percentages calculated!")
-    print("Check that institution and site names in CAMPUS_MAPPING match the USHE data exactly")
-else:
-    for campus, pct in sorted(campus_percentages.items()):
-        print(f"{campus}: {pct:.1%}")
+print("Final Non-UVU Campus Split Percentages:")
+for campus, pct in sorted(campus_percentages.items()):
+    print(f"  {campus}: {pct:.1%}")
 ```
 
-## Apply Disaggregation to Forecast
+## Step 4: Hardcode UVU Campus Historical Data
 
 ```{python}
-# Map institution codes to USHE names
-INSTITUTION_NAME_MAP = {
-    'SLCC': 'Salt Lake Community College',
-    'UofU': 'University Of Utah',
-    'UVU': 'Utah Valley University',
-    'WSU': 'Weber State University',
-}
+# Hardcoded UVU campus enrollment from previous RTP spatial planning
+# Source: Historical records and approved campus expansion plans
+# Note: UVU-Heber excluded (outside WF-TDM region)
 
-# Create disaggregated forecast - restructured approach
-# First, create a complete year x campus matrix
+uvu_campus_hardcoded = pd.DataFrame({
+    'Year': list(range(2000, 2061)),
+    'UVU_Orem': [20946, 22609, 23609, 23803, 24149, 24487, 23305, 23840, 27052, 29045,
+                 31739, 32734, 31810, 30880, 31589, 33565, 35126, 37785, 39931, 40278,
+                 39438, 39715, 41504, 43105, 44720, 46420, 47173, 48078, 48855, 48850,
+                 49762, 50673, 51583, 52494, 53405, 54317, 55227, 56138, 57049, 57960,
+                 58871, 59781, 60693, 61604, 62515, 63426, 64338, 65248, 66159, 67069,
+                 67981, 67981, 67981, 67981, 67981, 67981, 67981, 67981, 67981, 67981, 67981],
+    'UVU_Lehi': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                 0, 0, 0, 0, 0, 0, 0, 0, 0, 1300,
+                 1342, 1384, 1426, 1468, 1510, 1552, 1594, 1635, 1677, 1719,
+                 1761, 1803, 1845, 1887, 1929, 1971, 2013, 2055, 2097, 2139,
+                 2181, 2223, 2265, 2306, 2348, 2390, 2432, 2474, 2516, 2558,
+                 2600, 2600, 2600, 2600, 2600, 2600, 2600, 2600, 2600, 2600, 2600],
+    'UVU_Payson': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0, 0, 0, 0, 0, 0, 0, 0, 0, 650,
+                   762, 874, 986, 1098, 1210, 1321, 1433, 1545, 1657, 1769,
+                   1881, 1993, 2105, 2217, 2329, 2440, 2552, 2664, 2776, 2888,
+                   3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000],
+    'UVU_Vineyard1': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 570, 725, 879, 1034,
+                      1187, 1342, 1496, 1651, 1805, 1960, 2114, 2269, 2422, 2577,
+                      2731, 2886, 3040, 3195, 3349, 3504, 3657, 3812, 3966, 4121,
+                      4275, 4275, 4275, 4275, 4275, 4275, 4275, 4275, 4275, 4275, 4275],
+    'UVU_Vineyard2': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 30, 38, 46, 54,
+                      63, 71, 79, 87, 95, 103, 111, 119, 128, 136,
+                      144, 152, 160, 168, 176, 184, 193, 201, 209, 217,
+                      225, 225, 225, 225, 225, 225, 225, 225, 225, 225, 225],
+})
 
-# Get all unique years from forecast
-all_years = sorted(df_forecast_adjusted['Year'].unique())
+# Calculate total UVU enrollment from hardcoded data
+uvu_campus_hardcoded['UVU_Total_Hardcoded'] = (
+    uvu_campus_hardcoded['UVU_Orem'] +
+    uvu_campus_hardcoded['UVU_Lehi'] +
+    uvu_campus_hardcoded['UVU_Payson'] +
+    uvu_campus_hardcoded['UVU_Vineyard1'] +
+    uvu_campus_hardcoded['UVU_Vineyard2']
+)
 
-# Initialize the output dataframe with years
+print("=== UVU Campus Hardcoded Data ===")
+print(f"Years covered: {uvu_campus_hardcoded['Year'].min()} - {uvu_campus_hardcoded['Year'].max()}")
+print("\nSample (2019-2026 - satellite campus openings):")
+print(uvu_campus_hardcoded[uvu_campus_hardcoded['Year'].between(2019, 2026)].to_string(index=False))
+```
+
+## Step 5: Calculate UVU Time-Varying Campus Proportions
+
+```{python}
+# Calculate proportion of total UVU enrollment at each campus for each year
+# These proportions will be applied to our forecasted UVU total
+
+uvu_campus_proportions = uvu_campus_hardcoded.copy()
+
+for campus in ['UVU_Orem', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2']:
+    prop_col = campus.replace('UVU_', 'prop_')
+    uvu_campus_proportions[prop_col] = (
+        uvu_campus_proportions[campus] / uvu_campus_proportions['UVU_Total_Hardcoded']
+    )
+
+# Keep proportions for merging
+uvu_props_clean = uvu_campus_proportions[['Year', 'prop_Orem', 'prop_Lehi', 'prop_Payson', 'prop_Vineyard1', 'prop_Vineyard2']].copy()
+
+print("\n=== UVU Campus Proportions (Sample Years) ===")
+print(uvu_props_clean[uvu_props_clean['Year'].isin([2000, 2019, 2026, 2029, 2050, 2060])].to_string(index=False))
+```
+
+## Step 6: Create Combined Historical + Forecast Dataset
+
+```{python}
+# Combine historical enrollment (2000-2023) with forecast (2024-2060)
+# Historical: df_enroll_ipeds
+# Forecast: df_forecast_adjusted
+
+# Prepare historical data
+df_hist_inst = df_enroll_ipeds.copy()
+df_hist_inst = df_hist_inst[df_hist_inst['Year'].between(2000, 2023)].copy()
+
+# Melt to long format with proper column names
+df_hist_long = df_hist_inst.melt(id_vars=['Year'], var_name='Univ_Code', value_name='Enrollment')
+df_hist_long = df_hist_long.dropna()
+df_hist_long['Type'] = 'Historical'
+
+# Prepare forecast data
+df_forecast_long = df_forecast_adjusted[['Year', 'Univ_Code', 'Enrollment']].copy()
+df_forecast_long['Type'] = 'Projected'
+
+# Combine
+df_combined_inst = pd.concat([df_hist_long, df_forecast_long], ignore_index=True)
+df_combined_inst = df_combined_inst.sort_values(['Univ_Code', 'Year']).reset_index(drop=True)
+
+print(f"\n=== Combined Institution-Level Dataset ===")
+print(f"Years: {df_combined_inst['Year'].min()} - {df_combined_inst['Year'].max()}")
+print(f"Total records: {len(df_combined_inst)}")
+print(f"Historical: {len(df_combined_inst[df_combined_inst['Type']=='Historical'])}")
+print(f"Projected: {len(df_combined_inst[df_combined_inst['Type']=='Projected'])}")
+```
+
+## Step 7: Disaggregate to Campus Level (2000-2060)
+
+```{python}
+# Create year-indexed output dataframe
+all_years = sorted(df_combined_inst['Year'].unique())
 df_campus_output = pd.DataFrame({'YEAR': all_years})
 
-print(f"\n=== Applying Disaggregation to Forecast ===")
+print(f"\n=== Disaggregating to Campus Level ===")
 print(f"Processing {len(all_years)} years from {min(all_years)} to {max(all_years)}")
-print(f"Campus percentages available: {len(campus_percentages)}")
-
-if len(campus_percentages) == 0:
-    print("\n⚠️  WARNING: No campus percentages were calculated!")
-    print("This means the disaggregation will fail. Check the previous section for errors.")
 
 # Process each institution
-for univ_code in df_forecast_adjusted['Univ_Code'].unique():
-    print(f"\nProcessing: {univ_code}")
+for univ_code in df_combined_inst['Univ_Code'].unique():
+    print(f"\n{univ_code}:")
 
-    # Get enrollment time series for this institution
-    inst_forecast = df_forecast_adjusted[df_forecast_adjusted['Univ_Code'] == univ_code][['Year', 'Enrollment']].copy()
-    inst_forecast = inst_forecast.set_index('Year')
+    # Get enrollment time series
+    inst_data = df_combined_inst[df_combined_inst['Univ_Code'] == univ_code][['Year', 'Enrollment']].copy()
+    inst_data = inst_data.set_index('Year').sort_index()
 
-    # Handle single-campus institutions
-    if univ_code in SINGLE_CAMPUS.values():
-        df_campus_output[univ_code] = df_campus_output['YEAR'].map(inst_forecast['Enrollment'])
-        print(f"  ✓ Single campus - assigned to {univ_code}")
+    # === SINGLE-CAMPUS INSTITUTIONS ===
+    if univ_code in SINGLE_CAMPUS_CODES:
+        df_campus_output[univ_code] = df_campus_output['YEAR'].map(inst_data['Enrollment'])
+        print(f"  Single campus - assigned directly")
 
-    # Handle multi-campus institutions
+    # === UVU - SPECIAL TIME-VARYING PROPORTIONS ===
+    elif univ_code == 'UVU':
+        print(f"  Applying time-varying campus proportions")
+
+        # Merge our UVU forecast with proportions
+        uvu_merged = inst_data.reset_index().merge(
+            uvu_props_clean,
+            on='Year',
+            how='left'
+        )
+
+        # Apply proportions to forecasted enrollment
+        for campus_name, prop_name in [
+            ('UVU_Main', 'prop_Orem'),
+            ('UVU_Lehi', 'prop_Lehi'),
+            ('UVU_Payson', 'prop_Payson'),
+            ('UVU_Vineyard1', 'prop_Vineyard1'),
+            ('UVU_Vineyard2', 'prop_Vineyard2')
+        ]:
+            uvu_merged[campus_name] = (uvu_merged['Enrollment'] * uvu_merged[prop_name]).round().astype(int)
+
+        # Map to output dataframe
+        uvu_merged_indexed = uvu_merged.set_index('Year')
+        df_campus_output['UVU_Main'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Main'])
+        df_campus_output['UVU_Lehi'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Lehi'])
+        df_campus_output['UVU_Payson'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Payson'])
+        df_campus_output['UVU_Vineyard1'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Vineyard1'])
+        df_campus_output['UVU_Vineyard2'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Vineyard2'])
+
+        # Combined Vineyard column
+        df_campus_output['UVU_Vineyard'] = (
+            df_campus_output['UVU_Vineyard1'].fillna(0) + df_campus_output['UVU_Vineyard2'].fillna(0)
+        )
+
+        print(f"  Created: UVU_Main, UVU_Lehi, UVU_Payson, UVU_Vineyard1, UVU_Vineyard2, UVU_Vineyard")
+
+    # === MULTI-CAMPUS (NON-UVU) - APPLY 2025 USHE SPLITS ===
     elif univ_code in INSTITUTION_NAME_MAP:
         institution = INSTITUTION_NAME_MAP[univ_code]
         campus_map = CAMPUS_MAPPING.get(institution, {})
 
-        print(f"  Multi-campus institution: {institution}")
-        print(f"  Target campuses: {list(campus_map.values())}")
-
-        campuses_assigned = 0
+        print(f"  Applying 2025 USHE campus splits")
 
         for site, campus_code in campus_map.items():
             percentage = campus_percentages.get(campus_code, 0)
 
             if percentage > 0:
-                # Apply percentage to create campus-specific forecast
                 df_campus_output[campus_code] = df_campus_output['YEAR'].map(
-                    lambda year: int(round(inst_forecast.loc[year, 'Enrollment'] * percentage))
-                    if year in inst_forecast.index else 0
+                    lambda y: int(round(inst_data.loc[y, 'Enrollment'] * percentage))
+                    if y in inst_data.index else 0
                 )
-                print(f"    ✓ {campus_code}: {percentage:.1%} of total")
-                campuses_assigned += 1
+                print(f"    {campus_code}: {percentage:.1%}")
             else:
                 df_campus_output[campus_code] = 0
-                print(f"    ✗ {campus_code}: No percentage data (set to 0)")
-
-        if campuses_assigned == 0:
-            print(f"  ⚠️  WARNING: No campuses were assigned data for {univ_code}!")
-        else:
-            print(f"  Summary: {campuses_assigned}/{len(campus_map)} campuses assigned")
+                print(f"    {campus_code}: WARNING - no split data")
 
 print(f"\n{'='*60}")
 print(f"Generated {len(df_campus_output.columns)-1} campus columns")
-print(f"Columns: {[c for c in df_campus_output.columns if c != 'YEAR']}")
 ```
 
-## Add UVU Special Campuses (Placeholder)
-
-```{python}
-# UVU satellite campuses (Lehi, Payson, Vineyard) are handled separately
-# For now, initialize as zero - these will be populated from a separate data source
-
-# Initialize columns if they don't exist
-for campus in ['UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard']:
-    if campus not in df_campus_output.columns:
-        df_campus_output[campus] = 0
-
-print("\nNote: UVU_Lehi, UVU_Payson, UVU_Vineyard initialized to 0")
-print("These campuses require separate data source for enrollment projections")
-```
-
-## Reorder Columns to Match Target Format
+## Step 8: Finalize Column Order and Export
 
 ```{python}
 # Define desired column order
@@ -1207,52 +1287,62 @@ COLUMN_ORDER = [
     'YEAR', 'BYU', 'ENSIGN',
     'SLCC_MAIN', 'SLCC_JD', 'SLCC_ML', 'SLCC_SC',
     'UOFU_Main',
-    'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard',
+    'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2', 'UVU_Vineyard',
     'WSU_Main', 'WSU_Davis',
     'WESTMIN'
 ]
 
-# Add any missing columns as zeros
+# Ensure all columns exist
 for col in COLUMN_ORDER:
     if col not in df_campus_output.columns:
         print(f"WARNING: Column {col} missing, adding as zeros")
         df_campus_output[col] = 0
 
-# Reorder and select only desired columns
+# Reorder and clean
 df_campus_final = df_campus_output[COLUMN_ORDER].copy()
-
-# Sort by year
 df_campus_final = df_campus_final.sort_values('YEAR').reset_index(drop=True)
 
-# Convert all enrollment columns to integers
+# Convert to integers
 for col in COLUMN_ORDER:
     if col != 'YEAR':
         df_campus_final[col] = df_campus_final[col].fillna(0).astype(int)
 
-# Display preview
-print("\n=== Campus-Level Enrollment Forecast (First 5 Years) ===")
+# Display summary
+print("\n=== Campus-Level Enrollment Forecast (2000-2060) ===")
+print("\nFirst 5 years:")
 print(df_campus_final.head())
 
-print(f"\n=== Campus-Level Enrollment Forecast (Last 5 Years) ===")
+print("\nSatellite campus opening years (2019-2030):")
+print(df_campus_final[df_campus_final['YEAR'].between(2019, 2030)])
+
+print("\nLast 5 years:")
 print(df_campus_final.tail())
 
-# Display summary statistics
-print("\n=== Summary Statistics (2025) ===")
-if 2025 in df_campus_final['YEAR'].values:
-    row_2025 = df_campus_final[df_campus_final['YEAR'] == 2025].iloc[0]
-    for col in COLUMN_ORDER:
-        if col != 'YEAR':
-            val = row_2025[col]
-            print(f"{col}: {val:,}")
+# Verification: Check UVU total
+df_campus_final_check = df_campus_final.copy()
+df_campus_final_check['UVU_Total_Check'] = (
+    df_campus_final_check['UVU_Main'] + df_campus_final_check['UVU_Lehi'] +
+    df_campus_final_check['UVU_Payson'] + df_campus_final_check['UVU_Vineyard1'] +
+    df_campus_final_check['UVU_Vineyard2']
+)
+
+print("\n=== UVU Total Verification (Sample Years) ===")
+verification_years = [2000, 2019, 2026, 2029, 2050, 2060]
+print(df_campus_final_check[df_campus_final_check['YEAR'].isin(verification_years)][
+    ['YEAR', 'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2', 'UVU_Total_Check']
+].to_string(index=False))
 ```
 
 ## Export Campus-Level Forecast
 
 ```{python}
-# Export disaggregated campus-level forecast
-campus_output_path = PATHS['forecast_output'].parent / 'enrollment_forecast_by_campus_2024_2060.csv'
-df_campus_final.to_csv(campus_output_path, index=False)
-print(f"\nCampus-level forecast saved to: {campus_output_path}")
+# Export disaggregated campus-level forecast (2000-2060)
+df_campus_final.to_csv(PATHS['campus_forecast_output'], index=False)
+print(f"\n{'='*60}")
+print(f"Campus-level forecast (2000-2060) saved to:")
+print(f"  {PATHS['campus_forecast_output']}")
+print(f"\nTotal years: {len(df_campus_final)}")
+print(f"Total campuses: {len(COLUMN_ORDER) - 1}")
 ```
 
 ---
@@ -1525,5 +1615,5 @@ Plot.plot({
 
 ::: {.callout-tip title="Download the output file:"}
 * [enrollment_forecast_2024_2060.csv](./intermediate/enrollment_forecast_2024_2060.csv)
-* [enrollment_forecast_by_campus_2024_2060.csv](./intermediate/enrollment_forecast_by_campus_2024_2060.csv)
+* [enrollment_forecast_by_campus_2000_2060.csv](./intermediate/enrollment_forecast_by_campus_2000_2060.csv)
 :::
