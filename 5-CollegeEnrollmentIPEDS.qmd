@@ -226,16 +226,16 @@ warnings.filterwarnings("ignore")
 # 1. Define Target Institutions
 id_map = {
     230038: "BYU",
-    230418: "ENSIGN",
+    230418: "Ensign",
     230746: "SLCC",
     230764: "UofU",
     230737: "UVU",
     230782: "WSU",
-    230807: "WESTMIN",
+    230807: "Westmin",
 }
 
 # Define column order for consistent output
-target_cols = ["BYU", "ENSIGN", "SLCC", "UofU", "UVU", "WSU", "WESTMIN"]
+target_cols = ["BYU", "Ensign", "SLCC", "UofU", "UVU", "WSU", "Westmin"]
 
 # 2. Setup Data Directory
 raw_data_dir = Path("data/IPEDS_Raw")

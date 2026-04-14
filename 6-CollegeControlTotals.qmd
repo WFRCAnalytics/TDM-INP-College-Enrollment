@@ -99,6 +99,28 @@ TEST_START_YEAR = 2020
 CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
 ```
 
+```md
+;WFRC area colleges
+Ensign     = 1029   ;95 N 300 W, Salt Lake City, UT 84101
+Westmin    = 1263   ;1840 S 1300 E, Salt Lake City, UT 84105
+UofU_Main  = 1051   ;201 Presidents Cir, Salt Lake City, UT 84112
+WSU_Main   =  437   ;3848 Harrison Blvd, Ogden, UT 84403
+WSU_Davis  =  693   ;2750 University Park Blvd. layton, UT, 84041
+SLCC_Main  = 1580   ;4600 S Redwood Rd, Salt Lake City, UT 84123
+SLCC_SC    = 1231   ;1575 S State Street ,Salt Lake City, UT 84115
+SLCC_JD    = 1776   ;3491 W 9000 S, West Jordan, UT  84088
+SLCC_ML    = 1886   ;9750 S 300 W, Sandy, UT  84070 (Miller campus as called Sandy campus)
+SLCC_HM    = 2053   ;14551 South Sentinel Ridge Blvd, Herriman, UT (new campus east of MVC)
+
+;MAG area colleges
+BYU        = 2966   ;1 N University Hill, Provo, UT 84602
+UVU_Main   = 2931   ;800 West University Parkway, Orem, UT 84058
+UVU_Geneva = 2930   ;951 S Geneva Rd, Orem, UT 84058
+UVU_Lehi   = 2552   ;2912 Executive Pkwy, Lehi, UT 84043, Lehi, UT 84043 (new location)
+UVU_Vine   = 2805   ;Mill Rd, Vineyard UT  (FUTURE CAMPUS)
+UVU_Payson = 3406   ;Future Nebo Belt Rd, Payson UT  (FUTURE CAMPUS)
+```
+
 # 1. Load Data
 
 ## Enrollment Data
@@ -108,17 +130,17 @@ CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
 
 ```{python}
 # Load IPEDS enrollment data (2000-2023)
-df_enroll_ipeds = pd.read_csv(PATHS['enrollment_ipeds'])
+df_enroll_ipeds = pd.read_csv(PATHS["enrollment_ipeds"])
 
 # Historical enrollment data from 2019 RTP (1990-1999)
 df_enroll_rtp19 = pd.DataFrame(
     {
         "Year": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999],
         "UofU": [24311, 25581, 25868, 25982, 25645, 26810, 26079, 25895, 25018, 25781],
-        "WSU":  [13449, 14495, 14993, 14447, 14230, 13996, 13906, 14613, 13900, 14984],
-        "UVU":  [7885, 8777, 9623, 10512, 13293, 14040, 14756, 15994, 18174, 20062],
+        "WSU": [13449, 14495, 14993, 14447, 14230, 13996, 13906, 14613, 13900, 14984],
+        "UVU": [7885, 8777, 9623, 10512, 13293, 14040, 14756, 15994, 18174, 20062],
         "SLCC": [13344, 15972, 17766, 18311, 19440, 20834, 22394, 24307, 19754, 21273],
-        "BYU":  [30465, 31101, 31108, 30547, 30413, 30465, 30563, 31249, 32202, 32731],
+        "BYU": [30465, 31101, 31108, 30547, 30413, 30465, 30563, 31249, 32202, 32731],
     }
 )
 ```
@@ -461,7 +483,7 @@ We calculate dynamic base percentages using localized USHE zip-code enrollment p
 We programmatically extract the USHE derived weights for our public institutions and combine them with the explicit private institution boundaries.
 
 ```{python}
-TARGET_COLLEGES = ["UOFU", "BYU", "UVU", "SLCC", "WSU", "ENSIGN", "WESTMIN"]
+TARGET_COLLEGES = ["UOFU", "BYU", "UVU", "SLCC", "WSU", "Ensign", "Westmin"]
 ANALYSIS_COUNTIES = ["Box Elder", "Weber", "Davis", "Salt Lake", "Utah"]
 
 # Utah Counties Mapping
@@ -535,14 +557,14 @@ CATCHMENT_WEIGHTS = {
         "Salt Lake County": 0.20,
         "Utah County": 0.75,
     },
-    "ENSIGN": {
+    "Ensign": {
         "Box Elder County": 0.000,
         "Weber County": 0.000,
         "Davis County": 0.15,
         "Salt Lake County": 0.70,
         "Utah County": 0.15,
     },
-    "WESTMIN": {
+    "Westmin": {
         "Box Elder County": 0.000,
         "Weber County": 0.000,
         "Davis County": 0.065,
@@ -565,8 +587,8 @@ DISPLAY_NAMES = {
     "WSU": "Weber State University",
     "SLCC": "Salt Lake Community College",
     "BYU": "Brigham Young University",
-    "ENSIGN": "Ensign College",
-    "WESTMIN": "Westminster College",
+    "Ensign": "Ensign College",
+    "Westmin": "Westminster College",
 }
 SCHOOL_KEYS = list(CATCHMENT_WEIGHTS.keys())
 
@@ -750,7 +772,7 @@ for year in FORECAST_YEARS:
         model_rate = float(models_dict[key].predict(np.array([[t]]))[0])
 
         # Decay calibration shift to zero over 10 years for WESTMIN only
-        if key == "WESTMIN":
+        if key == "Westmin":
             decay_factor = max(0.0, 1.0 - (year - 2023) / 10.0) if CALIB_SHIFT else 0.0
             active_shift = shift_factors[key] * decay_factor
         else:
@@ -1023,29 +1045,25 @@ for inst, count in inst_totals.items():
 ```{python}
 # Map USHE Site names to campus codes for non-UVU institutions
 CAMPUS_MAPPING = {
-    'Salt Lake Community College': {
-        'Main Campus': 'SLCC_MAIN',
-        'SLCC - Jordan Campus': 'SLCC_JD',
-        'SLCC - Larry H. Miller Campus': 'SLCC_ML',
-        'SLCC - South City Center': 'SLCC_SC',
+    "Salt Lake Community College": {
+        "Main Campus": "SLCC_Main",
+        "SLCC - Jordan Campus": "SLCC_JD",
+        "SLCC - Larry H. Miller Campus": "SLCC_ML",
+        "SLCC - South City Center": "SLCC_SC",
+        "SLCC-UU Juniper building at Herriman Campus": "SLCC_HM",
     },
-    'University Of Utah': {
-        'Main Campus': 'UOFU_Main',
-    },
-    'Weber State University': {
-        'Main Campus': 'WSU_Main',
-        'WSU - Davis Center': 'WSU_Davis',
-    }
+    "University Of Utah": {"Main Campus": "UofU_Main"},
+    "Weber State University": {"Main Campus": "WSU_Main", "WSU - Davis Center": "WSU_Davis"},
 }
 
 # Single-campus institutions (no disaggregation needed)
-SINGLE_CAMPUS_CODES = ['BYU', 'ENSIGN', 'WESTMIN']
+SINGLE_CAMPUS_CODES = ["BYU", "Ensign", "Westmin"]
 
 # Map institution codes to USHE names
 INSTITUTION_NAME_MAP = {
-    'SLCC': 'Salt Lake Community College',
-    'UofU': 'University Of Utah',
-    'WSU': 'Weber State University',
+    "SLCC": "Salt Lake Community College",
+    "UofU": "University Of Utah",
+    "WSU": "Weber State University",
 }
 ```
 
@@ -1093,9 +1111,10 @@ for campus, pct in sorted(campus_percentages.items()):
 # Source: Historical records and approved campus expansion plans
 # Note: UVU-Heber excluded (outside WF-TDM region)
 
+# fmt: off
 uvu_campus_hardcoded = pd.DataFrame({
     'Year': list(range(2000, 2061)),
-    'UVU_Orem': [20946, 22609, 23609, 23803, 24149, 24487, 23305, 23840, 27052, 29045,
+    'UVU_Main': [20946, 22609, 23609, 23803, 24149, 24487, 23305, 23840, 27052, 29045,
                  31739, 32734, 31810, 30880, 31589, 33565, 35126, 37785, 39931, 40278,
                  39438, 39715, 41504, 43105, 44720, 46420, 47173, 48078, 48855, 48850,
                  49762, 50673, 51583, 52494, 53405, 54317, 55227, 56138, 57049, 57960,
@@ -1126,20 +1145,21 @@ uvu_campus_hardcoded = pd.DataFrame({
                       144, 152, 160, 168, 176, 184, 193, 201, 209, 217,
                       225, 225, 225, 225, 225, 225, 225, 225, 225, 225, 225],
 })
+# fmt: on
 
 # Calculate total UVU enrollment from hardcoded data
-uvu_campus_hardcoded['UVU_Total_Hardcoded'] = (
-    uvu_campus_hardcoded['UVU_Orem'] +
-    uvu_campus_hardcoded['UVU_Lehi'] +
-    uvu_campus_hardcoded['UVU_Payson'] +
-    uvu_campus_hardcoded['UVU_Vineyard1'] +
-    uvu_campus_hardcoded['UVU_Vineyard2']
+uvu_campus_hardcoded["UVU_Total_Hardcoded"] = (
+    uvu_campus_hardcoded["UVU_Main"]
+    + uvu_campus_hardcoded["UVU_Lehi"]
+    + uvu_campus_hardcoded["UVU_Payson"]
+    + uvu_campus_hardcoded["UVU_Vineyard1"]
+    + uvu_campus_hardcoded["UVU_Vineyard2"]
 )
 
 print("=== UVU Campus Hardcoded Data ===")
 print(f"Years covered: {uvu_campus_hardcoded['Year'].min()} - {uvu_campus_hardcoded['Year'].max()}")
 print("\nSample (2019-2026 - satellite campus openings):")
-print(uvu_campus_hardcoded[uvu_campus_hardcoded['Year'].between(2019, 2026)].to_string(index=False))
+print(uvu_campus_hardcoded[uvu_campus_hardcoded["Year"].between(2019, 2026)].to_string(index=False))
 ```
 
 ## Step 5: Calculate UVU Time-Varying Campus Proportions
@@ -1150,17 +1170,23 @@ print(uvu_campus_hardcoded[uvu_campus_hardcoded['Year'].between(2019, 2026)].to_
 
 uvu_campus_proportions = uvu_campus_hardcoded.copy()
 
-for campus in ['UVU_Orem', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2']:
-    prop_col = campus.replace('UVU_', 'prop_')
+for campus in ["UVU_Main", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard1", "UVU_Vineyard2"]:
+    prop_col = campus.replace("UVU_", "prop_")
     uvu_campus_proportions[prop_col] = (
-        uvu_campus_proportions[campus] / uvu_campus_proportions['UVU_Total_Hardcoded']
+        uvu_campus_proportions[campus] / uvu_campus_proportions["UVU_Total_Hardcoded"]
     )
 
 # Keep proportions for merging
-uvu_props_clean = uvu_campus_proportions[['Year', 'prop_Orem', 'prop_Lehi', 'prop_Payson', 'prop_Vineyard1', 'prop_Vineyard2']].copy()
+uvu_props_clean = uvu_campus_proportions[
+    ["Year", "prop_Main", "prop_Lehi", "prop_Payson", "prop_Vineyard1", "prop_Vineyard2"]
+].copy()
 
 print("\n=== UVU Campus Proportions (Sample Years) ===")
-print(uvu_props_clean[uvu_props_clean['Year'].isin([2000, 2019, 2026, 2029, 2050, 2060])].to_string(index=False))
+print(
+    uvu_props_clean[uvu_props_clean["Year"].isin([2000, 2019, 2026, 2029, 2050, 2060])].to_string(
+        index=False
+    )
+)
 ```
 
 ## Step 6: Create Combined Historical + Forecast Dataset
@@ -1198,60 +1224,68 @@ print(f"Projected: {len(df_combined_inst[df_combined_inst['Type']=='Projected'])
 
 ```{python}
 # Create year-indexed output dataframe
-all_years = sorted(df_combined_inst['Year'].unique())
-df_campus_output = pd.DataFrame({'YEAR': all_years})
+all_years = sorted(df_combined_inst["Year"].unique())
+df_campus_output = pd.DataFrame({";YEAR": all_years})
 
 print(f"\n=== Disaggregating to Campus Level ===")
 print(f"Processing {len(all_years)} years from {min(all_years)} to {max(all_years)}")
 
 # Process each institution
-for univ_code in df_combined_inst['Univ_Code'].unique():
+for univ_code in df_combined_inst["Univ_Code"].unique():
     print(f"\n{univ_code}:")
 
     # Get enrollment time series
-    inst_data = df_combined_inst[df_combined_inst['Univ_Code'] == univ_code][['Year', 'Enrollment']].copy()
-    inst_data = inst_data.set_index('Year').sort_index()
+    inst_data = df_combined_inst[df_combined_inst["Univ_Code"] == univ_code][
+        ["Year", "Enrollment"]
+    ].copy()
+    inst_data = inst_data.set_index("Year").sort_index()
 
     # === SINGLE-CAMPUS INSTITUTIONS ===
     if univ_code in SINGLE_CAMPUS_CODES:
-        df_campus_output[univ_code] = df_campus_output['YEAR'].map(inst_data['Enrollment'])
+        df_campus_output[univ_code] = df_campus_output[";YEAR"].map(inst_data["Enrollment"])
         print(f"  Single campus - assigned directly")
 
     # === UVU - SPECIAL TIME-VARYING PROPORTIONS ===
-    elif univ_code == 'UVU':
+    elif univ_code == "UVU":
         print(f"  Applying time-varying campus proportions")
 
         # Merge our UVU forecast with proportions
-        uvu_merged = inst_data.reset_index().merge(
-            uvu_props_clean,
-            on='Year',
-            how='left'
-        )
+        uvu_merged = inst_data.reset_index().merge(uvu_props_clean, on="Year", how="left")
 
         # Apply proportions to forecasted enrollment
         for campus_name, prop_name in [
-            ('UVU_Main', 'prop_Orem'),
-            ('UVU_Lehi', 'prop_Lehi'),
-            ('UVU_Payson', 'prop_Payson'),
-            ('UVU_Vineyard1', 'prop_Vineyard1'),
-            ('UVU_Vineyard2', 'prop_Vineyard2')
+            ("UVU_Main", "prop_Main"),
+            ("UVU_Lehi", "prop_Lehi"),
+            ("UVU_Payson", "prop_Payson"),
+            ("UVU_Vineyard1", "prop_Vineyard1"),
+            ("UVU_Vineyard2", "prop_Vineyard2"),
         ]:
-            uvu_merged[campus_name] = (uvu_merged['Enrollment'] * uvu_merged[prop_name]).round().astype(int)
+            uvu_merged[campus_name] = (
+                (uvu_merged["Enrollment"] * uvu_merged[prop_name]).round().astype(int)
+            )
 
         # Map to output dataframe
-        uvu_merged_indexed = uvu_merged.set_index('Year')
-        df_campus_output['UVU_Main'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Main'])
-        df_campus_output['UVU_Lehi'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Lehi'])
-        df_campus_output['UVU_Payson'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Payson'])
-        df_campus_output['UVU_Vineyard1'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Vineyard1'])
-        df_campus_output['UVU_Vineyard2'] = df_campus_output['YEAR'].map(uvu_merged_indexed['UVU_Vineyard2'])
-
-        # Combined Vineyard column
-        df_campus_output['UVU_Vineyard'] = (
-            df_campus_output['UVU_Vineyard1'].fillna(0) + df_campus_output['UVU_Vineyard2'].fillna(0)
+        uvu_merged_indexed = uvu_merged.set_index("Year")
+        df_campus_output["UVU_Main"] = df_campus_output[";YEAR"].map(uvu_merged_indexed["UVU_Main"])
+        df_campus_output["UVU_Lehi"] = df_campus_output[";YEAR"].map(uvu_merged_indexed["UVU_Lehi"])
+        df_campus_output["UVU_Payson"] = df_campus_output[";YEAR"].map(
+            uvu_merged_indexed["UVU_Payson"]
+        )
+        df_campus_output["UVU_Vineyard1"] = df_campus_output[";YEAR"].map(
+            uvu_merged_indexed["UVU_Vineyard1"]
+        )
+        df_campus_output["UVU_Vineyard2"] = df_campus_output[";YEAR"].map(
+            uvu_merged_indexed["UVU_Vineyard2"]
         )
 
-        print(f"  Created: UVU_Main, UVU_Lehi, UVU_Payson, UVU_Vineyard1, UVU_Vineyard2, UVU_Vineyard")
+        # Combined Vineyard column
+        df_campus_output["UVU_Vineyard"] = df_campus_output["UVU_Vineyard1"].fillna(
+            0
+        ) + df_campus_output["UVU_Vineyard2"].fillna(0)
+
+        print(
+            f"  Created: UVU_Main, UVU_Lehi, UVU_Payson, UVU_Vineyard1, UVU_Vineyard2, UVU_Vineyard"
+        )
 
     # === MULTI-CAMPUS (NON-UVU) - APPLY 2025 USHE SPLITS ===
     elif univ_code in INSTITUTION_NAME_MAP:
@@ -1264,17 +1298,20 @@ for univ_code in df_combined_inst['Univ_Code'].unique():
             percentage = campus_percentages.get(campus_code, 0)
 
             if percentage > 0:
-                df_campus_output[campus_code] = df_campus_output['YEAR'].map(
-                    lambda y: int(round(inst_data.loc[y, 'Enrollment'] * percentage))
-                    if y in inst_data.index else 0
+                df_campus_output[campus_code] = df_campus_output[";YEAR"].map(
+                    lambda y: (
+                        int(round(inst_data.loc[y, "Enrollment"] * percentage))
+                        if y in inst_data.index
+                        else 0
+                    )
                 )
                 print(f"    {campus_code}: {percentage:.1%}")
             else:
                 df_campus_output[campus_code] = 0
                 print(f"    {campus_code}: WARNING - no split data")
 
-print(f"\n{'='*60}")
-print(f"Generated {len(df_campus_output.columns)-1} campus columns")
+print(f"\n{'=' * 60}")
+print(f"Generated {len(df_campus_output.columns) - 1} campus columns")
 ```
 
 ## Step 8: Finalize Column Order and Export
@@ -1282,12 +1319,25 @@ print(f"Generated {len(df_campus_output.columns)-1} campus columns")
 ```{python}
 # Define desired column order
 COLUMN_ORDER = [
-    'YEAR', 'BYU', 'ENSIGN',
-    'SLCC_MAIN', 'SLCC_JD', 'SLCC_ML', 'SLCC_SC',
-    'UOFU_Main',
-    'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2', 'UVU_Vineyard',
-    'WSU_Main', 'WSU_Davis',
-    'WESTMIN'
+    ";YEAR",
+    "Ensign",
+    "Westmin",
+    "UofU_Main",
+    "WSU_Main",
+    "WSU_Davis",
+    "SLCC_Main",
+    "SLCC_SC",
+    "SLCC_JD",
+    "SLCC_ML",
+    "SLCC_HM",
+    "BYU",
+    "UVU_Main",
+    "UVU_Geneva",
+    "UVU_Lehi",
+    # "UVU_Vineyard1",
+    # "UVU_Vineyard2",
+    "UVU_Vineyard",
+    "UVU_Payson",
 ]
 
 # Ensure all columns exist
@@ -1298,11 +1348,11 @@ for col in COLUMN_ORDER:
 
 # Reorder and clean
 df_campus_final = df_campus_output[COLUMN_ORDER].copy()
-df_campus_final = df_campus_final.sort_values('YEAR').reset_index(drop=True)
+df_campus_final = df_campus_final.sort_values(";YEAR").reset_index(drop=True)
 
 # Convert to integers
 for col in COLUMN_ORDER:
-    if col != 'YEAR':
+    if col != ";YEAR":
         df_campus_final[col] = df_campus_final[col].fillna(0).astype(int)
 
 # Display summary
@@ -1311,24 +1361,27 @@ print("\nFirst 5 years:")
 print(df_campus_final.head())
 
 print("\nSatellite campus opening years (2019-2030):")
-print(df_campus_final[df_campus_final['YEAR'].between(2019, 2030)])
+print(df_campus_final[df_campus_final[";YEAR"].between(2019, 2030)])
 
 print("\nLast 5 years:")
 print(df_campus_final.tail())
 
 # Verification: Check UVU total
 df_campus_final_check = df_campus_final.copy()
-df_campus_final_check['UVU_Total_Check'] = (
-    df_campus_final_check['UVU_Main'] + df_campus_final_check['UVU_Lehi'] +
-    df_campus_final_check['UVU_Payson'] + df_campus_final_check['UVU_Vineyard1'] +
-    df_campus_final_check['UVU_Vineyard2']
+df_campus_final_check["UVU_Total_Check"] = (
+    df_campus_final_check["UVU_Main"]
+    + df_campus_final_check["UVU_Lehi"]
+    + df_campus_final_check["UVU_Payson"]
+    + df_campus_final_check["UVU_Vineyard"]
 )
 
 print("\n=== UVU Total Verification (Sample Years) ===")
 verification_years = [2000, 2019, 2026, 2029, 2050, 2060]
-print(df_campus_final_check[df_campus_final_check['YEAR'].isin(verification_years)][
-    ['YEAR', 'UVU_Main', 'UVU_Lehi', 'UVU_Payson', 'UVU_Vineyard1', 'UVU_Vineyard2', 'UVU_Total_Check']
-].to_string(index=False))
+print(
+    df_campus_final_check[df_campus_final_check[";YEAR"].isin(verification_years)][
+        [";YEAR", "UVU_Main", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard", "UVU_Total_Check"]
+    ].to_string(index=False)
+)
 ```
 
 ## Export Campus-Level Forecast
@@ -1349,14 +1402,18 @@ print(f"Total campuses: {len(COLUMN_ORDER) - 1}")
 
 ```{python}
 # ── Export Only the Final Adjusted Output CSV ─────────────────────────────────
-df_forecast_adjusted.to_csv(PATHS["forecast_output"], index=False)
+df_forecast_adjusted.rename(columns={"Year": ";YEAR"}).to_csv(PATHS["forecast_output"], index=False)
 
 # ── Metrics & Residuals Export ────────────────────────────────────────────────
-df_all_metrics = pd.concat([pd.DataFrame(model_metrics), pd.DataFrame(flagship_metrics)], ignore_index=True)
+df_all_metrics = pd.concat(
+    [pd.DataFrame(model_metrics), pd.DataFrame(flagship_metrics)], ignore_index=True
+)
 df_residuals = pd.DataFrame(residual_records)
 
 # ── Prepare Forecast Data for OJS ─────────────────────────────────────────────
-df_history_long = df_enroll_ipeds.melt(id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment").dropna()
+df_history_long = df_enroll_ipeds.melt(
+    id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
+).dropna()
 df_history_long["University"] = df_history_long["Univ_Code"].map(DISPLAY_NAMES)
 df_history_long["Type"] = "Historical"
 df_history_long["Scenario"] = "Both"
@@ -1388,7 +1445,7 @@ ojs_define(
     data_regional_rate_proj=pd.DataFrame(regional_rate_proj).to_dict(orient="records"),
     control_ceiling=float(PENETRATION_CEILING),
     data_model_metrics=df_all_metrics.to_dict(orient="records"),
-    data_residuals=df_residuals.to_dict(orient="records")
+    data_residuals=df_residuals.to_dict(orient="records"),
 )
 ```
 

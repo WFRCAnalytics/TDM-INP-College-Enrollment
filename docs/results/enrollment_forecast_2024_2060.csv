@@ -1,4 +1,4 @@
-Year,Univ_Code,University,Enrollment,Type
+;YEAR,Univ_Code,University,Enrollment,Type
 2024,BYU,Brigham Young University,35108,Projected
 2025,BYU,Brigham Young University,35142,Projected
 2026,BYU,Brigham Young University,35175,Projected
@@ -36,43 +36,43 @@ Year,Univ_Code,University,Enrollment,Type
 2058,BYU,Brigham Young University,36656,Projected
 2059,BYU,Brigham Young University,36690,Projected
 2060,BYU,Brigham Young University,36724,Projected
-2024,ENSIGN,Ensign College,6155,Projected
-2025,ENSIGN,Ensign College,6340,Projected
-2026,ENSIGN,Ensign College,6541,Projected
-2027,ENSIGN,Ensign College,6717,Projected
-2028,ENSIGN,Ensign College,6813,Projected
-2029,ENSIGN,Ensign College,6856,Projected
-2030,ENSIGN,Ensign College,6877,Projected
-2031,ENSIGN,Ensign College,6890,Projected
-2032,ENSIGN,Ensign College,6877,Projected
-2033,ENSIGN,Ensign College,6844,Projected
-2034,ENSIGN,Ensign College,6828,Projected
-2035,ENSIGN,Ensign College,6805,Projected
-2036,ENSIGN,Ensign College,6787,Projected
-2037,ENSIGN,Ensign College,6739,Projected
-2038,ENSIGN,Ensign College,6653,Projected
-2039,ENSIGN,Ensign College,6530,Projected
-2040,ENSIGN,Ensign College,6427,Projected
-2041,ENSIGN,Ensign College,6312,Projected
-2042,ENSIGN,Ensign College,6219,Projected
-2043,ENSIGN,Ensign College,6131,Projected
-2044,ENSIGN,Ensign College,6041,Projected
-2045,ENSIGN,Ensign College,5949,Projected
-2046,ENSIGN,Ensign College,5902,Projected
-2047,ENSIGN,Ensign College,5864,Projected
-2048,ENSIGN,Ensign College,5865,Projected
-2049,ENSIGN,Ensign College,5894,Projected
-2050,ENSIGN,Ensign College,5970,Projected
-2051,ENSIGN,Ensign College,6079,Projected
-2052,ENSIGN,Ensign College,6208,Projected
-2053,ENSIGN,Ensign College,6344,Projected
-2054,ENSIGN,Ensign College,6475,Projected
-2055,ENSIGN,Ensign College,6595,Projected
-2056,ENSIGN,Ensign College,6699,Projected
-2057,ENSIGN,Ensign College,6783,Projected
-2058,ENSIGN,Ensign College,6847,Projected
-2059,ENSIGN,Ensign College,6890,Projected
-2060,ENSIGN,Ensign College,6917,Projected
+2024,Ensign,Ensign College,6155,Projected
+2025,Ensign,Ensign College,6340,Projected
+2026,Ensign,Ensign College,6541,Projected
+2027,Ensign,Ensign College,6717,Projected
+2028,Ensign,Ensign College,6813,Projected
+2029,Ensign,Ensign College,6856,Projected
+2030,Ensign,Ensign College,6877,Projected
+2031,Ensign,Ensign College,6890,Projected
+2032,Ensign,Ensign College,6877,Projected
+2033,Ensign,Ensign College,6844,Projected
+2034,Ensign,Ensign College,6828,Projected
+2035,Ensign,Ensign College,6805,Projected
+2036,Ensign,Ensign College,6787,Projected
+2037,Ensign,Ensign College,6739,Projected
+2038,Ensign,Ensign College,6653,Projected
+2039,Ensign,Ensign College,6530,Projected
+2040,Ensign,Ensign College,6427,Projected
+2041,Ensign,Ensign College,6312,Projected
+2042,Ensign,Ensign College,6219,Projected
+2043,Ensign,Ensign College,6131,Projected
+2044,Ensign,Ensign College,6041,Projected
+2045,Ensign,Ensign College,5949,Projected
+2046,Ensign,Ensign College,5902,Projected
+2047,Ensign,Ensign College,5864,Projected
+2048,Ensign,Ensign College,5865,Projected
+2049,Ensign,Ensign College,5894,Projected
+2050,Ensign,Ensign College,5970,Projected
+2051,Ensign,Ensign College,6079,Projected
+2052,Ensign,Ensign College,6208,Projected
+2053,Ensign,Ensign College,6344,Projected
+2054,Ensign,Ensign College,6475,Projected
+2055,Ensign,Ensign College,6595,Projected
+2056,Ensign,Ensign College,6699,Projected
+2057,Ensign,Ensign College,6783,Projected
+2058,Ensign,Ensign College,6847,Projected
+2059,Ensign,Ensign College,6890,Projected
+2060,Ensign,Ensign College,6917,Projected
 2024,SLCC,Salt Lake Community College,27755,Projected
 2025,SLCC,Salt Lake Community College,28762,Projected
 2026,SLCC,Salt Lake Community College,29868,Projected
@@ -184,43 +184,6 @@ Year,Univ_Code,University,Enrollment,Type
 2058,UofU,University of Utah,46700,Projected
 2059,UofU,University of Utah,47027,Projected
 2060,UofU,University of Utah,47353,Projected
-2024,WESTMIN,Westminster College,1492,Projected
-2025,WESTMIN,Westminster College,1776,Projected
-2026,WESTMIN,Westminster College,2073,Projected
-2027,WESTMIN,Westminster College,2364,Projected
-2028,WESTMIN,Westminster College,2628,Projected
-2029,WESTMIN,Westminster College,2870,Projected
-2030,WESTMIN,Westminster College,3100,Projected
-2031,WESTMIN,Westminster College,3323,Projected
-2032,WESTMIN,Westminster College,3529,Projected
-2033,WESTMIN,Westminster College,3718,Projected
-2034,WESTMIN,Westminster College,3690,Projected
-2035,WESTMIN,Westminster College,3661,Projected
-2036,WESTMIN,Westminster College,3633,Projected
-2037,WESTMIN,Westminster College,3591,Projected
-2038,WESTMIN,Westminster College,3527,Projected
-2039,WESTMIN,Westminster College,3440,Projected
-2040,WESTMIN,Westminster College,3367,Projected
-2041,WESTMIN,Westminster College,3287,Projected
-2042,WESTMIN,Westminster College,3218,Projected
-2043,WESTMIN,Westminster College,3151,Projected
-2044,WESTMIN,Westminster College,3083,Projected
-2045,WESTMIN,Westminster College,3014,Projected
-2046,WESTMIN,Westminster College,2973,Projected
-2047,WESTMIN,Westminster College,2936,Projected
-2048,WESTMIN,Westminster College,2919,Projected
-2049,WESTMIN,Westminster College,2916,Projected
-2050,WESTMIN,Westminster College,2937,Projected
-2051,WESTMIN,Westminster College,2974,Projected
-2052,WESTMIN,Westminster College,3019,Projected
-2053,WESTMIN,Westminster College,3068,Projected
-2054,WESTMIN,Westminster College,3115,Projected
-2055,WESTMIN,Westminster College,3158,Projected
-2056,WESTMIN,Westminster College,3194,Projected
-2057,WESTMIN,Westminster College,3222,Projected
-2058,WESTMIN,Westminster College,3242,Projected
-2059,WESTMIN,Westminster College,3254,Projected
-2060,WESTMIN,Westminster College,3258,Projected
 2024,WSU,Weber State University,32288,Projected
 2025,WSU,Weber State University,34088,Projected
 2026,WSU,Weber State University,36097,Projected
@@ -258,3 +221,40 @@ Year,Univ_Code,University,Enrollment,Type
 2058,WSU,Weber State University,50416,Projected
 2059,WSU,Weber State University,51214,Projected
 2060,WSU,Weber State University,51889,Projected
+2024,Westmin,Westminster College,1492,Projected
+2025,Westmin,Westminster College,1776,Projected
+2026,Westmin,Westminster College,2073,Projected
+2027,Westmin,Westminster College,2364,Projected
+2028,Westmin,Westminster College,2628,Projected
+2029,Westmin,Westminster College,2870,Projected
+2030,Westmin,Westminster College,3100,Projected
+2031,Westmin,Westminster College,3323,Projected
+2032,Westmin,Westminster College,3529,Projected
+2033,Westmin,Westminster College,3718,Projected
+2034,Westmin,Westminster College,3690,Projected
+2035,Westmin,Westminster College,3661,Projected
+2036,Westmin,Westminster College,3633,Projected
+2037,Westmin,Westminster College,3591,Projected
+2038,Westmin,Westminster College,3527,Projected
+2039,Westmin,Westminster College,3440,Projected
+2040,Westmin,Westminster College,3367,Projected
+2041,Westmin,Westminster College,3287,Projected
+2042,Westmin,Westminster College,3218,Projected
+2043,Westmin,Westminster College,3151,Projected
+2044,Westmin,Westminster College,3083,Projected
+2045,Westmin,Westminster College,3014,Projected
+2046,Westmin,Westminster College,2973,Projected
+2047,Westmin,Westminster College,2936,Projected
+2048,Westmin,Westminster College,2919,Projected
+2049,Westmin,Westminster College,2916,Projected
+2050,Westmin,Westminster College,2937,Projected
+2051,Westmin,Westminster College,2974,Projected
+2052,Westmin,Westminster College,3019,Projected
+2053,Westmin,Westminster College,3068,Projected
+2054,Westmin,Westminster College,3115,Projected
+2055,Westmin,Westminster College,3158,Projected
+2056,Westmin,Westminster College,3194,Projected
+2057,Westmin,Westminster College,3222,Projected
+2058,Westmin,Westminster College,3242,Projected
+2059,Westmin,Westminster College,3254,Projected
+2060,Westmin,Westminster College,3258,Projected
