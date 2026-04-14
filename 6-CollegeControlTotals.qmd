@@ -62,9 +62,7 @@ warnings.filterwarnings("ignore")
 # Centralized path configuration for all data inputs and outputs
 PATHS = {
     # Cache files (intermediate data)
-    "census_cache": Path(
-        "intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv"
-    ),
+    "census_cache": Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv"),
     # Input data files
     "enrollment_ipeds": Path("intermediate/Fall_Enrollment_1997_2023.csv"),
     "gpi_data": Path("data/GPI/SchColAgeFS-Dec2022.xlsx"),
@@ -78,8 +76,8 @@ PATHS = {
     "nhgis_dir": Path("data/NHGIS"),
     # Output paths
     "model_diagnostics": Path("intermediate/model_diagnostics.csv"),
-    "forecast_output": Path("intermediate/enrollment_forecast_2024_2060.csv"),
-    "campus_forecast_output": Path("intermediate/enrollment_forecast_by_campus_2000_2060.csv"),
+    "forecast_output": Path("results/enrollment_forecast_2024_2060.csv"),
+    "campus_forecast_output": Path("results/enrollment_forecast_by_campus_2000_2060.csv"),
 }
 
 # WF-TDM region counties
@@ -1614,6 +1612,6 @@ Plot.plot({
 ```
 
 ::: {.callout-tip title="Download the output file:"}
-* [enrollment_forecast_2024_2060.csv](./intermediate/enrollment_forecast_2024_2060.csv)
-* [enrollment_forecast_by_campus_2000_2060.csv](./intermediate/enrollment_forecast_by_campus_2000_2060.csv)
+* [enrollment_forecast_2024_2060.csv](./results/enrollment_forecast_2024_2060.csv)
+* [enrollment_forecast_by_campus_2000_2060.csv](./results/enrollment_forecast_by_campus_2000_2060.csv)
 :::
