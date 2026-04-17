@@ -92,11 +92,23 @@ TARGET_COUNTIES = [
 # Age range for college-age population (18-24) — matches GPI methodology
 COLLEGE_AGE_RANGES = ["18 and 19 years", "20 years", "21 years", "22 to 24 years"]
 
-# Train/test split: hold out 2020-2023 for model validation
-TEST_START_YEAR = 2020
+# Last year included in regression training. Set to 2019 to exclude COVID disruption
+# (the 2020-2021 dip permanently depresses slopes if included). Set to 2023 to train
+# on all available data including the recovery years.
+TRAIN_END_YEAR = 2020
+
+# Most recent year with actual IPEDS enrollment data. The model curve is shifted to
+# pass exactly through this year's actuals. Update each year as new data arrives.
+CALIB_YEAR = 2024
 
 # Global Toggles
-CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
+CALIB_SHIFT = True  # Toggle whether to shift model curves to meet CALIB_YEAR actuals
+
+# If True, freeze each school's participation rate at its CALIB_YEAR calibrated level
+# for all forecast years — growth comes from population change only, eliminating the
+# compounding of rate-trend × population-rebound that backloads growth to the 2050s.
+# Set to False to use the linearly extrapolated rate (current default behavior).
+FREEZE_RATE_AT_2023 = False
 
 # Share of UVU_Main enrollment reallocated to UVU_Geneva (951 S Geneva Rd, Orem).
 # Geneva is a small satellite campus adjacent to the main campus; this share is
@@ -836,13 +848,14 @@ display(df_hist_rates.tail().style.format("{:.2%}"))
 ## Step 4 — Linear Regression Model
 We fit a linear trend to each university's historical participation rate:
 $$\text{Rate}(t) = \alpha + \beta \cdot t, \quad t = \text{Year} - 1999$$
-The model is trained on 2000–`{python} (TEST_START_YEAR - 1)` and evaluated on `{python} TEST_START_YEAR`–2023.
+The model is trained on 2000–`{python} TRAIN_END_YEAR` using all available historical data, including the 2020–2023 COVID disruption and recovery period.
 
 ```{python}
 models_dict      = {}
 model_metrics    = []
 residual_records = []
-t_2023 = 2023 - 1999
+t_2023 = 2023 - 1999  # kept for residual alignment; calibration uses t_calib below
+t_calib = CALIB_YEAR - 1999
 
 for key in SCHOOL_KEYS:
     full_name    = DISPLAY_NAMES[key]
@@ -852,21 +865,16 @@ for key in SCHOOL_KEYS:
     t_arr        = years_arr - 1999
     X            = t_arr.reshape(-1, 1)
 
-    train_mask  = years_arr < TEST_START_YEAR
-    test_mask   = ~train_mask
+    train_mask  = years_arr <= TRAIN_END_YEAR
     years_train = years_arr[train_mask].astype(int)
-    years_test  = years_arr[test_mask].astype(int)
     rates_train = rates_arr[train_mask]
-    rates_test  = rates_arr[test_mask]
     X_train     = X[train_mask]
-    X_test      = X[test_mask]
 
     model = LinearRegression().fit(X_train, rates_train)
     models_dict[key] = model
     alpha      = float(model.intercept_)
     beta       = float(model.coef_[0])
     pred_train = model.predict(X_train)
-    pred_test  = model.predict(X_test) if test_mask.any() else None
 
     # Train Metrics
     pop_train         = df_weighted_hist.loc[years_train, key].values
@@ -880,49 +888,28 @@ for key in SCHOOL_KEYS:
         "Alpha": round(alpha, 4), "Beta": round(beta, 4), "R2": round(r2_train, 4), "MAPE": round(mape_train, 4),
     })
 
-    # Collect Residuals (Train)
+    # Collect Residuals
     for yr, act, pred in zip(years_train, enroll_act_train, enroll_pred_train):
         residual_records.append({
             "Year": int(yr), "University": full_name, "Actual": float(act), "Predicted": float(pred),
             "Residual": float(act - pred), "APE": float(abs(act - pred)/act) if act != 0 else 0,
             "Method": "Base Linear", "Dataset": "Train"
         })
-
-    # Test Metrics
-    if test_mask.any():
-        pop_test          = df_weighted_hist.loc[years_test, key].values
-        enroll_act_test   = df_ipeds.loc[years_test, key].values
-        enroll_pred_test  = pred_test * pop_test
-        r2_test           = r2_score(rates_test, pred_test)
-        mape_test         = mean_absolute_percentage_error(enroll_act_test, enroll_pred_test)
-
-        model_metrics.append({
-            "University": full_name, "Dataset": "Test", "Method": "Base Linear",
-            "Alpha": round(alpha, 4), "Beta": round(beta, 4), "R2": round(r2_test, 4), "MAPE": round(mape_test, 4),
-        })
-
-        # Collect Residuals (Test)
-        for yr, act, pred in zip(years_test, enroll_act_test, enroll_pred_test):
-            residual_records.append({
-                "Year": int(yr), "University": full_name, "Actual": float(act), "Predicted": float(pred),
-                "Residual": float(act - pred), "APE": float(abs(act - pred)/act) if act != 0 else 0,
-                "Method": "Base Linear", "Dataset": "Test"
-            })
 ```
 
 ## Step 5 — Calibration Shift Calculation
 
-Computes a per-school additive shift in RATE units so the model passes exactly through the 2023 actual enrollment when `CALIB_SHIFT = True`.
+Computes a per-school additive shift in RATE units so the model passes exactly through the `CALIB_YEAR` actual enrollment when `CALIB_SHIFT = True`.
 
 ```{python}
 shift_factors = {}
 for key in SCHOOL_KEYS:
-    model_rate_2023 = float(models_dict[key].predict(np.array([[t_2023]]))[0])
-    actual_enroll_2023 = float(df_ipeds.loc[2023, key])
-    gpi_pop_2023 = float(df_weighted_proj.loc[2023, key])
-    implied_gpi_rate_2023 = actual_enroll_2023 / gpi_pop_2023
+    model_rate_calib = float(models_dict[key].predict(np.array([[t_calib]]))[0])
+    actual_enroll_calib = float(df_ipeds.loc[CALIB_YEAR, key])
+    gpi_pop_calib = float(df_weighted_proj.loc[CALIB_YEAR, key])
+    implied_gpi_rate_calib = actual_enroll_calib / gpi_pop_calib
 
-    shift = (implied_gpi_rate_2023 - model_rate_2023) if CALIB_SHIFT else 0.0
+    shift = (implied_gpi_rate_calib - model_rate_calib) if CALIB_SHIFT else 0.0
     shift_factors[key] = shift
 
 display(Markdown("**Calibration Shifts (Base Linear Models):**"))
@@ -942,7 +929,7 @@ total_pop_hist_5cty = df_census_full[TARGET_COUNTIES].sum(axis=1).loc[2000:2023]
 regional_rate_hist  = (total_enroll_hist / total_pop_hist_5cty).dropna()
 
 HIST_MAX_PENETRATION = float(regional_rate_hist.max())
-PENETRATION_CEILING  = HIST_MAX_PENETRATION * 1.02   # 2% buffer above historical peak
+PENETRATION_CEILING  = HIST_MAX_PENETRATION * 1.10   # 10% buffer above historical peak
 
 FORECAST_YEARS   = list(range(2024, 2061))
 df_total_gpi_pop = df_gpi_ext[TARGET_COUNTIES].sum(axis=1)
@@ -957,11 +944,14 @@ for year in FORECAST_YEARS:
 
     raw = {}
     for key in SCHOOL_KEYS:
-        model_rate = float(models_dict[key].predict(np.array([[t]]))[0])
+        if FREEZE_RATE_AT_2023:
+            model_rate = float(models_dict[key].predict(np.array([[t_calib]]))[0])
+        else:
+            model_rate = float(models_dict[key].predict(np.array([[t]]))[0])
 
         # Decay calibration shift to zero over 10 years for WESTMIN only
         if key == "Westmin":
-            decay_factor = max(0.0, 1.0 - (year - 2023) / 10.0) if CALIB_SHIFT else 0.0
+            decay_factor = max(0.0, 1.0 - (year - CALIB_YEAR) / 10.0) if CALIB_SHIFT else 0.0
             active_shift = shift_factors[key] * decay_factor
         else:
             active_shift = shift_factors[key]
@@ -1019,14 +1009,10 @@ for key in FLAGSHIP_KEYS:
     t_arr = years_arr - 1999
     X = t_arr.reshape(-1, 1)
 
-    train_mask = years_arr < TEST_START_YEAR
-    test_mask = ~train_mask
+    train_mask = years_arr <= TRAIN_END_YEAR
     years_train = years_arr[train_mask].astype(int)
-    years_test = years_arr[test_mask].astype(int)
     enroll_train = enroll_arr[train_mask]
-    enroll_test = enroll_arr[test_mask]
     X_train = X[train_mask]
-    X_test = X[test_mask]
 
     model = LinearRegression().fit(X_train, enroll_train)
     flagship_models[key] = model
@@ -1034,7 +1020,6 @@ for key in FLAGSHIP_KEYS:
     alpha = float(model.intercept_)
     beta = float(model.coef_[0])
     pred_train = model.predict(X_train)
-    pred_test = model.predict(X_test) if test_mask.any() else None
 
     # Flagship Train Metrics
     r2_train = r2_score(enroll_train, pred_train)
@@ -1066,49 +1051,16 @@ for key in FLAGSHIP_KEYS:
             }
         )
 
-    # Flagship Test Metrics
-    if test_mask.any():
-        r2_test = r2_score(enroll_test, pred_test)
-        mape_test = mean_absolute_percentage_error(enroll_test, pred_test)
-        flagship_metrics.append(
-            {
-                "University": full_name,
-                "Dataset": "Test",
-                "Method": "Direct Flagship Override",
-                "Alpha": round(alpha, 1),
-                "Beta": round(beta, 1),
-                "R2": round(r2_test, 4),
-                "MAPE": round(mape_test, 4),
-            }
-        )
-
-        # Collect Residuals (Test)
-        for yr, act, pred in zip(years_test, enroll_test, pred_test):
-            residual_records.append(
-                {
-                    "Year": int(yr),
-                    "University": full_name,
-                    "Actual": float(act),
-                    "Predicted": float(pred),
-                    "Residual": float(act - pred),
-                    "APE": float(abs(act - pred) / act) if act != 0 else 0,
-                    "Method": "Direct Flagship Override",
-                    "Dataset": "Test",
-                }
-            )
-
     # Calibration Shift for Override (in enrollment units)
-    model_enroll_2023 = float(model.predict(np.array([[t_2023]]))[0])
-    actual_enroll_2023 = float(df_ipeds.loc[2023, key])
-    flagship_shifts[key] = (
-        (actual_enroll_2023 - model_enroll_2023) if CALIB_SHIFT else 0.0
-    )
+    model_enroll_calib = float(model.predict(np.array([[t_calib]]))[0])
+    actual_enroll_calib = float(df_ipeds.loc[CALIB_YEAR, key])
+    flagship_shifts[key] = (actual_enroll_calib - model_enroll_calib) if CALIB_SHIFT else 0.0
 
 display(Markdown("**Calibration Shifts (Flagship Direct Models - Students):**"))
 display(
-    pd.DataFrame.from_dict(
-        flagship_shifts, orient="index", columns=["Enrollment Shift"]
-    ).astype(int)
+    pd.DataFrame.from_dict(flagship_shifts, orient="index", columns=["Enrollment Shift"]).astype(
+        int
+    )
 )
 
 # Generate Override Forecast
@@ -1132,10 +1084,7 @@ df_flagship_override = pd.DataFrame(flagship_override_records)
 
 # Drop original BYU/UofU projected rows and substitute flagship overrides
 df_forecast_adjusted = pd.concat(
-    [
-        df_forecast_base[~df_forecast_base["Univ_Code"].isin(FLAGSHIP_KEYS)],
-        df_flagship_override,
-    ],
+    [df_forecast_base[~df_forecast_base["Univ_Code"].isin(FLAGSHIP_KEYS)], df_flagship_override],
     ignore_index=True,
 ).sort_values(["Univ_Code", "Year"])
 ```
@@ -1650,11 +1599,11 @@ ojs_define(
 
 ## Model Performance
 
-The following tables and charts display the accuracy (R² and Mean Absolute Percentage Error) for both the Base Linear Model (participation rate) and the Direct Flagship Override method. The Test dataset represents performance against the held-out 2020–2023 actuals.
+The following tables and charts display the accuracy (R² and Mean Absolute Percentage Error) for both the Base Linear Model (participation rate) and the Direct Flagship Override method. Models are trained on all available historical data (2000–2023), including the COVID disruption and recovery years.
 
 **How to interpret these metrics:**
 
-* **$R^2$ Score:** Measures how much of the historical enrollment trend is explained by our model. You want this number as close to `1.0` as possible. Compare the "Train" and "Test" scores—a massive drop in the Test score suggests the model is overfitting to past data and struggling with recent years.
+* **$R^2$ Score:** Measures how much of the historical enrollment trend is explained by our model. You want this number as close to `1.0` as possible.
 * **MAPE (Mean Absolute Percentage Error):** The average percentage difference between the model's prediction and the actual enrollment. Lower is better. A MAPE of `2%` means the model is usually off by about 2% of the total student body.
 
 ```{ojs}
@@ -1671,7 +1620,7 @@ Inputs.table(data_model_metrics, {
 
 ```{ojs}
 //| label: fig-metrics-bar
-//| fig-cap: "R² Accuracy Score by University (Test Dataset vs Train Dataset)"
+//| fig-cap: "R² Accuracy Score by University (Training Data 2000–2023)"
 
 Plot.plot({
   marks: [
