@@ -64,7 +64,7 @@ PATHS = {
     # Cache files (intermediate data)
     "census_cache": Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv"),
     # Input data files
-    "enrollment_ipeds": Path("intermediate/Fall_Enrollment_1997_2023.csv"),
+    "enrollment_ipeds": Path("intermediate/Fall_Enrollment_InPerson_2000_2023.csv"),
     "gpi_data": Path("data/GPI/SchColAgeFS-Dec2022.xlsx"),
     "gpi_projections": Path(
         "data/GPI/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx"
@@ -97,6 +97,12 @@ TEST_START_YEAR = 2020
 
 # Global Toggles
 CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
+
+# Share of UVU_Main enrollment reallocated to UVU_Geneva (951 S Geneva Rd, Orem).
+# Geneva is a small satellite campus adjacent to the main campus; this share is
+# subtracted from UVU_Main and assigned to UVU_Geneva in the final campus table.
+# Set to 0.0 to leave all enrollment at UVU_Main.
+UVU_GENEVA_SHARE = 0.05
 ```
 
 ```md
@@ -128,10 +134,192 @@ UVU_Payson = 3406   ;Future Nebo Belt Rd, Payson UT  (FUTURE CAMPUS)
 ### Utah System of Higher Education & IPEDS
 **Sources:** USHE and Integrated Postsecondary Education Data System (2000-2023)
 
-```{python}
-# Load IPEDS enrollment data (2000-2023)
-df_enroll_ipeds = pd.read_csv(PATHS["enrollment_ipeds"])
+In-person enrollment = students enrolled in **no** distance-education courses (`EFDENON`) + students enrolled in **some** distance-education courses / hybrid (`EFDESOM`). Exclusively online students are excluded as they generate no campus trips.
 
+| Years | Source | Method |
+|---|---|---|
+| 2012–2024 | `EF{YEAR}A_DIST` table in IPEDS Access DB | `EFDENON + EFDESOM` where `EFDELEV == 1` |
+| 2008–2011 | `EF{YEAR}A` table in IPEDS Access DB | `EFTOTLT` max per institution (total proxy) |
+| 2004–2007 | `EF{YEAR}A` table in IPEDS Access DB | `EFRACE15 + EFRACE16` max per institution |
+| 2000–2003 | Cached CSV in `data/IPEDS_Raw/` | `EFRACE15 + EFRACE16` max per institution |
+
+Results are cached to `intermediate/Fall_Enrollment_InPerson_2000_2023.csv` after the first run.
+
+```{python}
+import zipfile, io, tempfile, pyodbc, requests
+
+id_map = {
+    230038: "BYU",
+    230418: "Ensign",
+    230746: "SLCC",
+    230764: "UofU",
+    230737: "UVU",
+    230782: "WSU",
+    230807: "Westmin",
+}
+target_cols = ["BYU", "Ensign", "SLCC", "UofU", "UVU", "WSU", "Westmin"]
+
+enroll_cache = PATHS["enrollment_ipeds"]
+
+if enroll_cache.exists():
+    df_enroll_ipeds = pd.read_csv(enroll_cache, index_col="Year")
+    print(f"Loaded enrollment from cache: {enroll_cache}")
+else:
+    IPEDS_ACCESS_URLS = {
+        2024: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2024-25_Provisional.zip",
+        2023: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2023-24_Final.zip",
+        2022: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2022-23_Final.zip",
+        2021: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2021-22_Final.zip",
+        2020: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2020-21_Final.zip",
+        2019: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2019-20_Final.zip",
+        2018: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2018-19_Final.zip",
+        2017: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2017-18_Final.zip",
+        2016: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2016-17_Final.zip",
+        2015: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2015-16_Final.zip",
+        2014: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2014-15_Final.zip",
+        2013: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2013-14_Final.zip",
+        2012: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2012-13_Final.zip",
+        2011: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2011-12_Final.zip",
+        2010: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2010-11_Final.zip",
+        2009: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2009-10_Final.zip",
+        2008: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2008-09_Final.zip",
+        2007: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2007-08_Final.zip",
+        2006: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2006-07_Final.zip",
+        2005: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2005-06_Final.zip",
+        2004: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2004-05_Final.zip",
+    }
+
+    IPEDS_CSV_URLS = {
+        **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A_DIST.zip" for year in range(2012, 2024)},
+        **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A.zip" for year in range(2000, 2012)},
+    }
+    raw_dir = Path("data/IPEDS_Raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    de_frames  = []   # 2012–2024: EF{YEAR}A_DIST, in-person = EFDENON + EFDESOM
+    pre_frames = []   # 2004–2011: EF{YEAR}A, total enrollment as proxy
+
+    for year, url in IPEDS_ACCESS_URLS.items():
+        zip_path = Path("data/IPEDS_Access") / url.split("/")[-1]
+        if not zip_path.exists():
+            # Fallback: download and read the individual IPEDS CSV file
+            csv_url = IPEDS_CSV_URLS.get(year)
+            if csv_url is None:
+                print(f"No CSV fallback available for {year}, skipping")
+                continue
+            suffix   = "a_dist" if year >= 2012 else "a"
+            csv_path = raw_dir / f"ef{year}{suffix}.csv"
+            if not csv_path.exists():
+                r = requests.get(csv_url, timeout=60)
+                r.raise_for_status()
+                with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                    csv_name = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                    csv_path.write_bytes(z.read(csv_name))
+                print(f"Downloaded CSV fallback for {year}")
+            df = pd.read_csv(csv_path, encoding="latin1", low_memory=False)
+            df.columns = df.columns.str.upper()
+            df["Year"] = year
+            (de_frames if year >= 2012 else pre_frames).append(df)
+            print(f"CSV fallback {year}", end=" ")
+            continue
+        with zipfile.ZipFile(zip_path) as z, tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            # Discover accdb name at runtime (some years nest inside a subdirectory)
+            accdb_in_zip = next(f for f in z.namelist() if f.endswith(".accdb"))
+            z.extract(accdb_in_zip, tmp)
+            accdb_path = Path(tmp) / accdb_in_zip
+            conn_str   = f"Driver={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={accdb_path}"
+            conn = pyodbc.connect(conn_str)
+            try:
+                if year >= 2012:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFDELEV, EFDENON, EFDESOM FROM [EF{year}A_DIST]",
+                        conn,
+                    )
+                    df["Year"] = year
+                    de_frames.append(df)
+                elif year >= 2008:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFTOTLT FROM [EF{year}A]", conn
+                    )
+                    df["Year"] = year
+                    pre_frames.append(df)
+                else:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFRACE15, EFRACE16 FROM [EF{year}A]", conn
+                    )
+                    df["Year"] = year
+                    pre_frames.append(df)
+            finally:
+                conn.close()
+                del conn
+        print(f"Queried {year}", end=" ")
+
+    # 2012–2024: vectorized EFDENON + EFDESOM on grand-total rows
+    df_de = (
+        pd.concat(de_frames, ignore_index=True)
+        .query("EFDELEV == 1 and UNITID in @id_map")
+        .assign(InPerson=lambda x: x["EFDENON"].fillna(0) + x["EFDESOM"].fillna(0))
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # 2004–2011: concat fills missing columns with NaN; np.where selects the right total
+    df_pre = (
+        pd.concat(pre_frames, ignore_index=True)
+        .query("UNITID in @id_map")
+        .assign(
+            InPerson=lambda x: np.where(
+                x["EFTOTLT"].notna(),
+                x["EFTOTLT"].fillna(0),
+                x["EFRACE15"].fillna(0) + x["EFRACE16"].fillna(0),
+            )
+        )
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # 2000–2003: no Access DB available; download CSV if not already cached
+    legacy_frames = []
+    for year in range(2000, 2004):
+        csv_path = raw_dir / f"ef{year}a.csv"
+        if not csv_path.exists():
+            r = requests.get(IPEDS_CSV_URLS[year], timeout=60)
+            r.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                csv_name = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                csv_path.write_bytes(z.read(csv_name))
+            print(f"Downloaded {csv_path.name}")
+        df = pd.read_csv(csv_path, encoding="latin1", low_memory=False)
+        df.columns = df.columns.str.upper()
+        df["Year"] = year
+        legacy_frames.append(df)
+    df_legacy = (
+        pd.concat(legacy_frames, ignore_index=True)
+        .query("UNITID in @id_map")
+        .assign(InPerson=lambda x: x["EFRACE15"].fillna(0) + x["EFRACE16"].fillna(0))
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # Combine → .max() per (Year, UNITID) collapses disaggregated rows to grand total
+    df_enroll_ipeds = (
+        pd.concat([df_de, df_pre, df_legacy], ignore_index=True)
+        .groupby(["Year", "UNITID"])["InPerson"]
+        .max()
+        .reset_index()
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="InPerson", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    df_enroll_ipeds.columns.name = None
+
+    enroll_cache.parent.mkdir(exist_ok=True)
+    df_enroll_ipeds.to_csv(enroll_cache)
+    print(f"\nCached to {enroll_cache}")
+
+print("\n=== In-Person Fall Enrollment (2000–2023) ===")
+print(df_enroll_ipeds)
+```
+
+```{python}
 # Historical enrollment data from 2019 RTP (1990-1999)
 df_enroll_rtp19 = pd.DataFrame(
     {
@@ -634,7 +822,7 @@ $$\text{Rate}_{year} = \frac{\text{Actual Enrollment}_{year}}{\text{Weighted Pop
 
 ```{python}
 # Compute historic participation rates
-df_ipeds = df_enroll_ipeds.set_index("Year").sort_index()
+df_ipeds = df_enroll_ipeds.sort_index()
 df_hist_rates = pd.DataFrame(index=range(2000, 2024))
 for key in SCHOOL_KEYS:
     df_hist_rates[key] = (
@@ -1197,7 +1385,7 @@ print(
 # Forecast: df_forecast_adjusted
 
 # Prepare historical data
-df_hist_inst = df_enroll_ipeds.copy()
+df_hist_inst = df_enroll_ipeds.reset_index()
 df_hist_inst = df_hist_inst[df_hist_inst['Year'].between(2000, 2023)].copy()
 
 # Melt to long format with proper column names
@@ -1355,6 +1543,12 @@ for col in COLUMN_ORDER:
     if col != ";YEAR":
         df_campus_final[col] = df_campus_final[col].fillna(0).astype(int)
 
+# Reallocate a share of UVU_Main to UVU_Geneva
+if UVU_GENEVA_SHARE > 0:
+    geneva = (df_campus_final["UVU_Main"] * UVU_GENEVA_SHARE).round().astype(int)
+    df_campus_final["UVU_Geneva"] = geneva
+    df_campus_final["UVU_Main"]   = df_campus_final["UVU_Main"] - geneva
+
 # Display summary
 print("\n=== Campus-Level Enrollment Forecast (2000-2060) ===")
 print("\nFirst 5 years:")
@@ -1370,6 +1564,7 @@ print(df_campus_final.tail())
 df_campus_final_check = df_campus_final.copy()
 df_campus_final_check["UVU_Total_Check"] = (
     df_campus_final_check["UVU_Main"]
+    + df_campus_final_check["UVU_Geneva"]
     + df_campus_final_check["UVU_Lehi"]
     + df_campus_final_check["UVU_Payson"]
     + df_campus_final_check["UVU_Vineyard"]
@@ -1379,7 +1574,7 @@ print("\n=== UVU Total Verification (Sample Years) ===")
 verification_years = [2000, 2019, 2026, 2029, 2050, 2060]
 print(
     df_campus_final_check[df_campus_final_check[";YEAR"].isin(verification_years)][
-        [";YEAR", "UVU_Main", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard", "UVU_Total_Check"]
+        [";YEAR", "UVU_Main", "UVU_Geneva", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard", "UVU_Total_Check"]
     ].to_string(index=False)
 )
 ```
@@ -1411,7 +1606,7 @@ df_all_metrics = pd.concat(
 df_residuals = pd.DataFrame(residual_records)
 
 # ── Prepare Forecast Data for OJS ─────────────────────────────────────────────
-df_history_long = df_enroll_ipeds.melt(
+df_history_long = df_enroll_ipeds.reset_index().melt(
     id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
 ).dropna()
 df_history_long["University"] = df_history_long["Univ_Code"].map(DISPLAY_NAMES)

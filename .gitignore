@@ -4,4 +4,5 @@
 **/*.quarto_ipynb
 
 intermediate/*
-data/IPEDS/*.csv
+data/IPEDS/colleges_ipeds_headcount.csv
+implementation-plan-ipeds-access-inperson.md
