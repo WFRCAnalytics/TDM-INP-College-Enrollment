@@ -307,3 +307,236 @@ print(f"EDGE Geocode year: {latest_ipeds_year}")
 print(f"Institutions in WF-TDM region: {len(gdf_college_locations)}")
 gdf_college_locations.explore()
 ```
+
+# CSV Fallback: Fall Enrollment, FTE, and 12-Month Headcount
+
+Processes the locally cached IPEDS CSV files to produce total fall enrollment (`df_fall_enrollment`), full-time equivalent (`df_fte`), and 12-month unduplicated headcount (`df_effy`) for 2000–2023. These outputs are exported to `intermediate/` and used by notebook 6 to fill the pre-2004 gap where Access databases are unavailable.
+
+## Institution Configuration
+
+```{python}
+id_map = {
+    230038: "BYU",
+    230418: "Ensign",
+    230746: "SLCC",
+    230764: "UofU",
+    230737: "UVU",
+    230782: "WSU",
+    230807: "Westmin",
+}
+
+target_cols = ["BYU", "Ensign", "SLCC", "UofU", "UVU", "WSU", "Westmin"]
+
+raw_data_dir = Path("data/IPEDS_Raw")
+```
+
+## Fall Enrollment
+
+```{python}
+enrollment_frames = []
+base_url = "https://nces.ed.gov/ipeds/datacenter/data"
+
+print("Fetching Fall Enrollment Data...")
+
+for year in range(2000, 2025):
+    file_tag = f"EF{year}A"
+    zip_url = f"{base_url}/{file_tag}.zip"
+
+    try:
+        response = requests.get(zip_url, timeout=30)
+        response.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+            csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
+            z.extract(csv_filename, path=raw_data_dir)
+            local_csv_path = raw_data_dir / csv_filename
+
+        df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
+        df_year.columns = df_year.columns.str.upper()
+
+        if "EFTOTLT" in df_year.columns:
+            df_year["Total_Enrollment"] = df_year["EFTOTLT"]
+        elif "EFRACE15" in df_year.columns and "EFRACE16" in df_year.columns:
+            df_year["Total_Enrollment"] = df_year["EFRACE15"] + df_year["EFRACE16"]
+        elif "EFRACE24" in df_year.columns:
+            df_year["Total_Enrollment"] = df_year["EFRACE24"]
+        else:
+            continue
+
+        mask = df_year["UNITID"].isin(id_map.keys())
+        df_filtered = (
+            df_year.loc[mask, ["UNITID", "Total_Enrollment"]]
+            .groupby("UNITID")["Total_Enrollment"]
+            .max()
+            .reset_index()
+        )
+
+        df_filtered["Year"] = year
+        enrollment_frames.append(df_filtered)
+        print(f"{year}", end=" ")
+
+    except Exception:
+        pass
+
+print("\nProcessing Complete.")
+if enrollment_frames:
+    df_fall_enrollment = (
+        pd.concat(enrollment_frames)
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="Total_Enrollment", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    print("\n--- Fall Enrollment (Headcount) ---")
+    print(df_fall_enrollment)
+```
+
+## Full-Time Equivalent (FTE)
+
+```{python}
+fte_frames = []
+
+print("Fetching FTE Data...")
+
+for year in range(2000, 2025):
+    file_tag = f"EFIA{year}"
+    zip_url = f"{base_url}/{file_tag}.zip"
+
+    try:
+        response = requests.get(zip_url, timeout=30)
+        response.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+            csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
+            z.extract(csv_filename, path=raw_data_dir)
+            local_csv_path = raw_data_dir / csv_filename
+
+        df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
+        df_year.columns = df_year.columns.str.upper()
+
+        df_year["FTE_Calc"] = 0
+
+        if "FTE12MN" in df_year.columns:
+            df_year["FTE_Calc"] = df_year["FTE12MN"].fillna(0)
+        elif "FTEUG" in df_year.columns:
+            ug = df_year["FTEUG"].fillna(0)
+            gd = df_year["FTEGD"].fillna(0) if "FTEGD" in df_year.columns else 0
+            dpp = df_year["FTEDPP"].fillna(0) if "FTEDPP" in df_year.columns else 0
+            df_year["FTE_Calc"] = ug + gd + dpp
+        elif "CDACTUA" in df_year.columns or "CNACTUA" in df_year.columns:
+            c_ug = df_year["CDACTUA"].fillna(0) if "CDACTUA" in df_year.columns else 0
+            c_gd = df_year["CDACTGA"].fillna(0) if "CDACTGA" in df_year.columns else 0
+            contact = df_year["CNACTUA"].fillna(0) if "CNACTUA" in df_year.columns else 0
+            df_year["FTE_Calc"] = ((c_ug + c_gd) / 30) + (contact / 900)
+        else:
+            continue
+
+        mask = df_year["UNITID"].isin(id_map.keys())
+        df_filtered = (
+            df_year.loc[mask, ["UNITID", "FTE_Calc"]]
+            .groupby("UNITID")["FTE_Calc"]
+            .max()
+            .reset_index()
+        )
+
+        df_filtered["Year"] = year
+        fte_frames.append(df_filtered)
+        print(f"{year}", end=" ")
+
+    except Exception:
+        pass
+
+print("\nProcessing Complete.")
+if fte_frames:
+    df_fte = (
+        pd.concat(fte_frames)
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="FTE_Calc", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    print("\n--- Full-Time Equivalent (FTE) ---")
+    print(df_fte)
+```
+
+## 12-Month Unduplicated Headcount
+
+```{python}
+effy_frames = []
+
+print("Fetching 12-Month Unduplicated Headcount...")
+
+for year in range(2000, 2025):
+    file_tag = f"EFFY{year}"
+    zip_url = f"{base_url}/{file_tag}.zip"
+
+    try:
+        response = requests.get(zip_url, timeout=30)
+        response.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+            csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
+            z.extract(csv_filename, path=raw_data_dir)
+            local_csv_path = raw_data_dir / csv_filename
+
+        df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
+        df_year.columns = df_year.columns.str.upper()
+
+        if "EFYTOTLT" in df_year.columns:
+            df_year["Headcount_12M"] = df_year["EFYTOTLT"]
+        elif "EFYTOTL" in df_year.columns:
+            df_year["Headcount_12M"] = df_year["EFYTOTL"]
+        elif "EFYUNDER" in df_year.columns and "EFYGRAD" in df_year.columns:
+            df_year["Headcount_12M"] = df_year["EFYUNDER"].fillna(0) + df_year["EFYGRAD"].fillna(0)
+        else:
+            continue
+
+        mask = df_year["UNITID"].isin(id_map.keys())
+        df_filtered = (
+            df_year.loc[mask, ["UNITID", "Headcount_12M"]]
+            .groupby("UNITID")["Headcount_12M"]
+            .max()
+            .reset_index()
+        )
+
+        df_filtered["Year"] = year
+        effy_frames.append(df_filtered)
+        print(f"{year}", end=" ")
+
+    except Exception:
+        pass
+
+print("\nProcessing Complete.")
+if effy_frames:
+    df_effy = (
+        pd.concat(effy_frames)
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="Headcount_12M", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    print("\n--- 12-Month Unduplicated Headcount ---")
+    print(df_effy)
+```
+
+# Export
+
+```{python}
+output_dir = Path("intermediate")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+if "df_fall_enrollment" in locals():
+    path = output_dir / "Fall_Enrollment_2000_2024.csv"
+    df_fall_enrollment.to_csv(path)
+    print(f"Saved Fall Enrollment to: {path}")
+
+if "df_fte" in locals():
+    path = output_dir / "FTE_Enrollment_2000_2024.csv"
+    df_fte.to_csv(path)
+    print(f"Saved FTE to: {path}")
+
+if "df_effy" in locals():
+    path = output_dir / "Headcount_12Month_2000_2024.csv"
+    df_effy.to_csv(path)
+    print(f"Saved 12-Month Headcount to: {path}")
+```
