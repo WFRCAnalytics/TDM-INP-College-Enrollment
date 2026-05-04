@@ -1,7 +1,7 @@
 ---
 title: "Historic College Enrollment"
-subtitle: Fetching College Enrollment Data from NCES Integrated Postsecondary Education Data System (IPEDS)
-description: This notebook fetches Total Enrollment and Full Time Equivalent for all Post Secondary Institutions within Wasatch Front Travel Demand Model region using Integrated Postsecondary Education Data System (IPEDS) from National Center for Education Statistics.
+subtitle: Fetching In-Person Fall Enrollment from NCES Integrated Postsecondary Education Data System (IPEDS)
+description: This notebook fetches in-person fall enrollment (students enrolled in no or some distance-education courses) for Post Secondary Institutions within the Wasatch Front Travel Demand Model region using IPEDS from NCES. In-person enrollment is the relevant metric for travel demand modeling as exclusively online students do not generate campus trips.
 author:
  - name: Pukar Bhandari
    email: pukar.bhandari@wfrc.utah.gov
@@ -163,67 +163,158 @@ gdf_region["geometry"] = gdf_region.buffer(1).buffer(-1)
 gdf_region.explore()
 ```
 
-## Post-Secondary Institutions
+## Download IPEDS Access Databases
+
+Downloads any missing IPEDS complete-data Access packages to `data/IPEDS_Access/`. Each zip contains one `.accdb` (the full database), one `.docx` (readme), and one `.xlsx` (data dictionary). Files are 40–90 MB each; already-downloaded zips are skipped.
 
 ```{python}
-# 1. Setup Configuration
-service_url = "https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2324/MapServer/0"
-output_dir = Path("data/IPEDS")
-gdb_path = output_dir / "Postsecondary_School_Locations.gpkg"
-layer_name = "EDGE_GEOCODE_POSTSECONDARYSCH_2324"
+import zipfile
+import io
+import warnings
 
-# 2. Check if file exists locally
-if not gdb_path.exists():
-    print(f"File not found at {gdb_path}. Downloading from ArcGIS Feature Service...")
+warnings.filterwarnings("ignore")
 
-    # Ensure directory exists
-    output_dir.mkdir(parents=True, exist_ok=True)
+IPEDS_ACCESS_URLS = {
+    2024: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2024-25_Provisional.zip",
+    2023: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2023-24_Final.zip",
+    2022: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2022-23_Final.zip",
+    2021: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2021-22_Final.zip",
+    2020: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2020-21_Final.zip",
+    2019: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2019-20_Final.zip",
+    2018: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2018-19_Final.zip",
+    2017: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2017-18_Final.zip",
+    2016: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2016-17_Final.zip",
+    2015: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2015-16_Final.zip",
+    2014: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2014-15_Final.zip",
+    2013: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2013-14_Final.zip",
+    2012: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2012-13_Final.zip",
+    2011: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2011-12_Final.zip",
+    2010: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2010-11_Final.zip",
+    2009: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2009-10_Final.zip",
+    2008: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2008-09_Final.zip",
+    2007: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2007-08_Final.zip",
+    2006: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2006-07_Final.zip",
+    2005: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2005-06_Final.zip",
+    2004: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2004-05_Final.zip",
+}
 
-    try:
-        # --- Use custom arc_read function ---
-        gdf_download = arc_read(
-            service_url, where=f"STATE = '{target_state}'", outFields="*", outSR=CRS_UTM
-        )
+access_dir = Path("data/IPEDS_Access")
+access_dir.mkdir(parents=True, exist_ok=True)
 
-        # Export to Geodatabase
-        print(f"Saving to {gdb_path}...")
-        gdf_download.to_file(gdb_path, layer=layer_name, driver="GPKG")
-        print("Download and export complete.")
+for year, url in IPEDS_ACCESS_URLS.items():
+    dest = access_dir / url.split("/")[-1]
+    if dest.exists():
+        print(f"Cached  {dest.name}")
+        continue
+    r = requests.get(url, timeout=300)
+    r.raise_for_status()
+    dest.write_bytes(r.content)
+    print(f"Downloaded {dest.name}  ({len(r.content)/1e6:.0f} MB)")
 
-    except Exception as e:
-        print(f"Error during download or export: {e}")
-else:
-    print(f"File found locally at {gdb_path}. Skipping download.")
+print(f"\n{sum(1 for _ in access_dir.glob('*.zip'))} IPEDS Access zips in {access_dir}")
+```
 
-# 3. Load the data back into Python
-# We load from the local GDB (cache) and apply the County filter here
-gdf_college_locations = gpd.read_file(
-    gdb_path,
-    layer=layer_name,
-    where=f"""CNTY IN ('{"', '".join([f"{fip}" for fip in fips_codes])}')""",
-    mask=gdf_region,
-).to_crs(CRS_UTM)
+## Download IPEDS Fall Enrollment CSV Files (All Years — Backup)
 
+Downloads individual IPEDS fall enrollment CSV zip files for all years to `data/IPEDS_Raw/` as a backup. For 2012–2023, `EF{YEAR}A_DIST.zip` provides the distance-education breakdown (`EFDENON`, `EFDESOM`); for 2000–2011, `EF{YEAR}A.zip` provides total enrollment. These CSVs are used as a fallback in notebook 6 if the full Access database packages are unavailable.
+
+```{python}
+IPEDS_CSV_URLS = {
+    **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A_DIST.zip" for year in range(2012, 2024)},
+    **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A.zip" for year in range(2000, 2012)},
+}
+
+raw_dir = Path("data/IPEDS_Raw")
+raw_dir.mkdir(parents=True, exist_ok=True)
+
+for year, url in IPEDS_CSV_URLS.items():
+    suffix = "a_dist" if year >= 2012 else "a"
+    csv_path = raw_dir / f"ef{year}{suffix}.csv"
+    if csv_path.exists():
+        print(f"Cached  {csv_path.name}")
+        continue
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        csv_name = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+        csv_path.write_bytes(z.read(csv_name))
+    print(f"Downloaded and extracted {csv_path.name}")
+
+print(f"\n{sum(1 for _ in raw_dir.glob('ef*.csv'))} IPEDS CSV files in {raw_dir}")
+```
+
+## Download EDGE Geocode Files
+
+Downloads any missing EDGE Geocode zip files to `data/IPEDS_Geocode/`.
+
+```{python}
+EDGE_GEOCODE_URLS = {
+    2024: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2425.zip",
+    2023: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2324.zip",
+    2022: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2223.zip",
+    2021: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_2122.zip",
+    2020: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_2021.zip",
+    2019: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSEC_1920.zip",
+    2018: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1819.zip",
+    2017: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1718.zip",
+    2016: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1617.zip",
+    2015: "https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1516.zip",
+}
+
+geocode_dir = Path("data/IPEDS_Geocode")
+geocode_dir.mkdir(parents=True, exist_ok=True)
+
+for year, url in EDGE_GEOCODE_URLS.items():
+    dest = geocode_dir / url.split("/")[-1]
+    if dest.exists():
+        print(f"Cached  {dest.name}")
+        continue
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    dest.write_bytes(r.content)
+    print(f"Downloaded {dest.name}")
+
+print(f"\n{sum(1 for _ in geocode_dir.glob('*.zip'))} EDGE geocode zips in {geocode_dir}")
+```
+
+## Post-Secondary Institutions
+
+Loads the EDGE Geocode for the year matching the most recent IPEDS enrollment year. The zip contains an XLSX with columns `UNITID`, `NAME`, `LAT`, `LON`, `STFIP`, `CNTY`. Points are converted to a GeoDataFrame, filtered to Utah counties in the WF-TDM region, and clipped to the regional boundary.
+
+```{python}
+# Match EDGE geocode year to most recent IPEDS enrollment year
+latest_ipeds_year = max(IPEDS_ACCESS_URLS)
+
+edge_url = EDGE_GEOCODE_URLS.get(latest_ipeds_year) or EDGE_GEOCODE_URLS[max(EDGE_GEOCODE_URLS)]
+geocode_zip = geocode_dir / edge_url.split("/")[-1]
+
+with zipfile.ZipFile(geocode_zip) as z:
+    xlsx_name = next(f for f in z.namelist() if f.lower().endswith(".xlsx"))
+    df_geocode = pd.read_excel(io.BytesIO(z.read(xlsx_name)))
+
+gdf_college_locations = (
+    gpd.GeoDataFrame(
+        df_geocode,
+        geometry=gpd.points_from_xy(df_geocode["LON"], df_geocode["LAT"]),
+        crs="EPSG:4326",
+    )
+    .loc[lambda x: x["STFIP"] == int(state_fips)]
+    .to_crs(CRS_UTM)
+    .clip(gdf_region)
+)
+
+print(f"EDGE Geocode year: {latest_ipeds_year}")
+print(f"Institutions in WF-TDM region: {len(gdf_college_locations)}")
 gdf_college_locations.explore()
 ```
 
-## Fetch Data
+# CSV Fallback: Fall Enrollment, FTE, and 12-Month Headcount
 
-### API Configuration
+Processes the locally cached IPEDS CSV files to produce total fall enrollment (`df_fall_enrollment`), full-time equivalent (`df_fte`), and 12-month unduplicated headcount (`df_effy`) for 2000–2023. These outputs are exported to `intermediate/` and used by notebook 6 to fill the pre-2004 gap where Access databases are unavailable.
+
+## Institution Configuration
 
 ```{python}
-# --- Configuration & Setup ---
-import requests
-import zipfile
-import io
-import pandas as pd
-from pathlib import Path
-import warnings
-
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
-
-# 1. Define Target Institutions
 id_map = {
     230038: "BYU",
     230418: "Ensign",
@@ -234,50 +325,35 @@ id_map = {
     230807: "Westmin",
 }
 
-# Define column order for consistent output
 target_cols = ["BYU", "Ensign", "SLCC", "UofU", "UVU", "WSU", "Westmin"]
 
-# 2. Setup Data Directory
 raw_data_dir = Path("data/IPEDS_Raw")
-raw_data_dir.mkdir(parents=True, exist_ok=True)
-
-print(f"Configuration loaded. Raw data will be saved to: {raw_data_dir.absolute()}")
 ```
 
-Read more at https://educationdata.urban.org/documentation/colleges.html for API documentation.
-
-### Fall Enrollment
-
-We apply `99` (Total) filters to all available dimensions found in the codebook (`sex`, `race`, `ftpt`, `degree_seeking`, `class_level`) to ensure we receive the single grand total row.
+## Fall Enrollment
 
 ```{python}
-# --- Fetch & Pivot Fall Enrollment (Direct IPEDS Download) ---
 enrollment_frames = []
 base_url = "https://nces.ed.gov/ipeds/datacenter/data"
 
 print("Fetching Fall Enrollment Data...")
 
-# Loop from 1997 to 2024
-for year in range(1997, 2025):
+for year in range(2000, 2025):
     file_tag = f"EF{year}A"
     zip_url = f"{base_url}/{file_tag}.zip"
 
     try:
-        # 1. Download ZIP
         response = requests.get(zip_url, timeout=30)
         response.raise_for_status()
 
-        # 2. Extract CSV
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
             z.extract(csv_filename, path=raw_data_dir)
             local_csv_path = raw_data_dir / csv_filename
 
-        # 3. Read & Process
         df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
         df_year.columns = df_year.columns.str.upper()
 
-        # 4. Determine Variable for Total Enrollment
         if "EFTOTLT" in df_year.columns:
             df_year["Total_Enrollment"] = df_year["EFTOTLT"]
         elif "EFRACE15" in df_year.columns and "EFRACE16" in df_year.columns:
@@ -287,7 +363,6 @@ for year in range(1997, 2025):
         else:
             continue
 
-        # 5. Filter and Aggregation (Max per UNITID to capture Grand Totals)
         mask = df_year["UNITID"].isin(id_map.keys())
         df_filtered = (
             df_year.loc[mask, ["UNITID", "Total_Enrollment"]]
@@ -303,15 +378,12 @@ for year in range(1997, 2025):
     except Exception:
         pass
 
-# 6. Pivot and Output
 print("\nProcessing Complete.")
 if enrollment_frames:
     df_fall_enrollment = (
         pd.concat(enrollment_frames)
         .assign(Inst=lambda x: x["UNITID"].map(id_map))
-        .pivot_table(
-            index="Year", columns="Inst", values="Total_Enrollment", aggfunc="sum"
-        )
+        .pivot_table(index="Year", columns="Inst", values="Total_Enrollment", aggfunc="sum")
         .reindex(columns=target_cols, fill_value=0)
         .astype(int)
     )
@@ -319,217 +391,46 @@ if enrollment_frames:
     print(df_fall_enrollment)
 ```
 
-```{python}
-# --- Fetch & Pivot Fall Enrollment (Campus / Non-Online) ---
-# Strategy: Download EF<Year>D (Distance Education) which contains both
-# "Grand Total" and "Exclusively Distance Education" in the same file for 2012+.
-# For pre-2012, assume 100% Campus.
-
-enrollment_frames = []
-base_url = "https://nces.ed.gov/ipeds/datacenter/data"
-
-print("Fetching Fall Enrollment (Campus Only)...")
-
-for year in range(1997, 2024):
-    try:
-        # --- Pre-2012: No Distance Ed Data (Assume All Campus) ---
-        if year < 2012:
-            file_tag = f"EF{year}A"
-            zip_url = f"{base_url}/{file_tag}.zip"
-
-            response = requests.get(zip_url, timeout=30)
-            response.raise_for_status()
-
-            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][
-                    0
-                ]
-                with z.open(csv_filename) as f:
-                    df = pd.read_csv(f, encoding="latin1", low_memory=False)
-
-            df.columns = df.columns.str.upper()
-
-            # Determine Total
-            if "EFTOTLT" in df.columns:
-                df["Campus_Total"] = df["EFTOTLT"]
-            elif "EFRACE24" in df.columns:
-                df["Campus_Total"] = df["EFRACE24"]
-            elif "EFRACE15" in df.columns:
-                df["Campus_Total"] = df["EFRACE15"] + df["EFRACE16"]
-            else:
-                continue
-
-        # --- 2012+: Use EF<Year>D (Distance Education) File ---
-        else:
-            # The 'A' file often splits data. The 'D' file (EF<Year>D) focuses
-            # specifically on Distance Education counts and usually has the cleanest totals.
-            # However, sometimes it's EF<Year>A_DIST. We try the standard A file first
-            # but look for the specific Distance Ed variables.
-
-            # Note: In recent IPEDS, DE data is inside the main EF<Year>A zip
-            # but sometimes in a separate CSV inside that zip, or a separate download.
-            # We will try the specific _DIST download first for safety.
-
-            # Attempt 1: EF<Year>A_DIST (Common for 2012-2019)
-            file_tag = f"EF{year}A_DIST"
-            # In later years (2020+), it might just be inside EF<Year>A.
-            # Let's try the specific DIST file first.
-            zip_url = f"{base_url}/{file_tag}.zip"
-
-            try:
-                response = requests.get(zip_url, timeout=30)
-                if response.status_code != 200:
-                    # Fallback to standard EF<Year>A if _DIST doesn't exist
-                    zip_url = f"{base_url}/EF{year}A.zip"
-                    response = requests.get(zip_url, timeout=30)
-
-                response.raise_for_status()
-
-                with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                    # Look for csv
-                    csv_names = [f for f in z.namelist() if f.lower().endswith(".csv")]
-                    # Prioritize one with "dist" in name if multiple exist
-                    dist_csv = next(
-                        (f for f in csv_names if "dist" in f.lower()), csv_names[0]
-                    )
-
-                    with z.open(dist_csv) as f:
-                        df = pd.read_csv(f, encoding="latin1", low_memory=False)
-
-                df.columns = df.columns.str.upper()
-
-                # Variable Mapping for 2012+
-                # EFDEEX = Exclusively Distance Education (All Students)
-                # EFTEUG = Total Undergraduate (if split)
-                # EFTOTLT = Grand Total (if available)
-
-                # We need "Grand Total" and "Exclusive DE Total"
-
-                # 1. Find Grand Total Variable in this file
-                if "EFTOTLT" in df.columns:
-                    total_col = "EFTOTLT"
-                elif "EFDETOT" in df.columns:  # Total enrollment in DE file
-                    total_col = "EFDETOT"
-                else:
-                    # If total isn't here, we might need to merge.
-                    # But usually EF...DIST files have the total col for calc purposes.
-                    print(f"Skipping {year}: No total col in DIST file")
-                    continue
-
-                # 2. Find Exclusive DE Variable
-                if "EFDEEX" in df.columns:
-                    de_col = "EFDEEX"  # Total Exclusive
-                elif "EFDEEX1" in df.columns and "EFDEEX2" in df.columns:
-                    # Sum Undergrad (1) + Grad (2)
-                    df["EFDEEX"] = df["EFDEEX1"].fillna(0) + df["EFDEEX2"].fillna(0)
-                    de_col = "EFDEEX"
-                else:
-                    de_col = None
-
-                if de_col:
-                    # Calculate Campus
-                    df["Campus_Total"] = df[total_col] - df[de_col]
-                else:
-                    # Fallback: Assume 0 DE if variable missing (unlikely for _DIST file)
-                    df["Campus_Total"] = df[total_col]
-
-            except Exception as e:
-                print(f"DL Error {year}: {e}")
-                continue
-
-        # --- Filter & Aggregate ---
-        mask = df["UNITID"].isin(id_map.keys())
-        df_filtered = (
-            df.loc[mask, ["UNITID", "Campus_Total"]]
-            .groupby("UNITID")["Campus_Total"]
-            .max()  # Max helps if there are duplicate rows (e.g. by race)
-            .reset_index()
-        )
-
-        # Safety Check: Ensure no negative numbers
-        # If Exclusive DE > Total (data error), clip to 0
-        df_filtered.loc[df_filtered["Campus_Total"] < 0, "Campus_Total"] = 0
-
-        df_filtered["Year"] = year
-        enrollment_frames.append(df_filtered)
-        print(f"{year}", end=" ")
-
-    except Exception as e:
-        pass
-
-# --- Pivot and Output ---
-print("\nProcessing Complete.")
-if enrollment_frames:
-    df_campus_only = (
-        pd.concat(enrollment_frames)
-        .assign(Inst=lambda x: x["UNITID"].map(id_map))
-        .pivot_table(index="Year", columns="Inst", values="Campus_Total", aggfunc="sum")
-        .reindex(columns=target_cols, fill_value=0)
-        .astype(int)
-    )
-    print("\n--- Fall Enrollment (Campus / Non-Online Only) ---")
-    print(df_campus_only)
-```
-
-### Full-Time Equivalent (FTE)
-
-We use `level_of_study=99` to fetch the total FTE directly, avoiding the need to sum undergraduate and graduate rows.
+## Full-Time Equivalent (FTE)
 
 ```{python}
-# --- Fetch & Pivot Full-Time Equivalent (Direct IPEDS Download) ---
 fte_frames = []
-base_url = "https://nces.ed.gov/ipeds/datacenter/data"
 
 print("Fetching FTE Data...")
 
-# Loop from 1997 to 2024
-for year in range(1997, 2025):
+for year in range(2000, 2025):
     file_tag = f"EFIA{year}"
     zip_url = f"{base_url}/{file_tag}.zip"
 
     try:
-        # 1. Download
         response = requests.get(zip_url, timeout=30)
         response.raise_for_status()
 
-        # 2. Extract
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
             z.extract(csv_filename, path=raw_data_dir)
             local_csv_path = raw_data_dir / csv_filename
 
-        # 3. Read
         df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
         df_year.columns = df_year.columns.str.upper()
 
-        # 4. Calculate FTE
         df_year["FTE_Calc"] = 0
 
-        # Method A: Pre-calculated Total
         if "FTE12MN" in df_year.columns:
             df_year["FTE_Calc"] = df_year["FTE12MN"].fillna(0)
-
-        # Method B: Sum of Components
         elif "FTEUG" in df_year.columns:
             ug = df_year["FTEUG"].fillna(0)
             gd = df_year["FTEGD"].fillna(0) if "FTEGD" in df_year.columns else 0
             dpp = df_year["FTEDPP"].fillna(0) if "FTEDPP" in df_year.columns else 0
             df_year["FTE_Calc"] = ug + gd + dpp
-
-        # Method C: Instructional Activity (Older Files)
         elif "CDACTUA" in df_year.columns or "CNACTUA" in df_year.columns:
-            # Credit Hours (Academic) / 30
             c_ug = df_year["CDACTUA"].fillna(0) if "CDACTUA" in df_year.columns else 0
             c_gd = df_year["CDACTGA"].fillna(0) if "CDACTGA" in df_year.columns else 0
-            # Contact Hours (Vocational) / 900
-            contact = (
-                df_year["CNACTUA"].fillna(0) if "CNACTUA" in df_year.columns else 0
-            )
+            contact = df_year["CNACTUA"].fillna(0) if "CNACTUA" in df_year.columns else 0
             df_year["FTE_Calc"] = ((c_ug + c_gd) / 30) + (contact / 900)
         else:
             continue
 
-        # 5. Filter and Aggregation
         mask = df_year["UNITID"].isin(id_map.keys())
         df_filtered = (
             df_year.loc[mask, ["UNITID", "FTE_Calc"]]
@@ -545,7 +446,6 @@ for year in range(1997, 2025):
     except Exception:
         pass
 
-# 6. Pivot and Output
 print("\nProcessing Complete.")
 if fte_frames:
     df_fte = (
@@ -559,59 +459,43 @@ if fte_frames:
     print(df_fte)
 ```
 
-### 12-Month Unduplicated Headcount (E12)
+## 12-Month Unduplicated Headcount
 
 ```{python}
-# --- Fetch & Pivot 12-Month Unduplicated Headcount (EFFY) ---
 effy_frames = []
-base_url = "https://nces.ed.gov/ipeds/datacenter/data"
 
 print("Fetching 12-Month Unduplicated Headcount...")
 
-# Loop from 1997 to 2024
-# Note: EFFY files usually report for the *previous* academic year,
-# but IPEDS labels the file by the collection year.
-for year in range(1997, 2025):
+for year in range(2000, 2025):
     file_tag = f"EFFY{year}"
     zip_url = f"{base_url}/{file_tag}.zip"
 
     try:
-        # 1. Download
         response = requests.get(zip_url, timeout=30)
         response.raise_for_status()
 
-        # 2. Extract
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             csv_filename = [f for f in z.namelist() if f.lower().endswith(".csv")][0]
             z.extract(csv_filename, path=raw_data_dir)
             local_csv_path = raw_data_dir / csv_filename
 
-        # 3. Read
         df_year = pd.read_csv(local_csv_path, encoding="latin1", low_memory=False)
         df_year.columns = df_year.columns.str.upper()
 
-        # 4. Determine Variable (EFYTOTLT = Grand Total 12-Month Enrollment)
-        # Variable names have shifted slightly over decades
         if "EFYTOTLT" in df_year.columns:
             df_year["Headcount_12M"] = df_year["EFYTOTLT"]
         elif "EFYTOTL" in df_year.columns:
             df_year["Headcount_12M"] = df_year["EFYTOTL"]
-        # Fallback for older files: Sum of Level of Study (Undergrad + Grad)
         elif "EFYUNDER" in df_year.columns and "EFYGRAD" in df_year.columns:
-            # Fillna(0) is critical here as some schools may lack grad programs
-            df_year["Headcount_12M"] = df_year["EFYUNDER"].fillna(0) + df_year[
-                "EFYGRAD"
-            ].fillna(0)
+            df_year["Headcount_12M"] = df_year["EFYUNDER"].fillna(0) + df_year["EFYGRAD"].fillna(0)
         else:
-            # If we can't find a total, skip this year
             continue
 
-        # 5. Filter and Aggregation
         mask = df_year["UNITID"].isin(id_map.keys())
         df_filtered = (
             df_year.loc[mask, ["UNITID", "Headcount_12M"]]
             .groupby("UNITID")["Headcount_12M"]
-            .max()  # Max handles cases where data might be disaggregated by race/gender rows
+            .max()
             .reset_index()
         )
 
@@ -622,60 +506,37 @@ for year in range(1997, 2025):
     except Exception:
         pass
 
-# 6. Pivot and Output
 print("\nProcessing Complete.")
 if effy_frames:
     df_effy = (
         pd.concat(effy_frames)
         .assign(Inst=lambda x: x["UNITID"].map(id_map))
-        .pivot_table(
-            index="Year", columns="Inst", values="Headcount_12M", aggfunc="sum"
-        )
+        .pivot_table(index="Year", columns="Inst", values="Headcount_12M", aggfunc="sum")
         .reindex(columns=target_cols, fill_value=0)
         .astype(int)
     )
-    print("\n--- 12-Month Unduplicated Headcount (E12) ---")
+    print("\n--- 12-Month Unduplicated Headcount ---")
     print(df_effy)
 ```
 
 # Export
 
 ```{python}
-# --- Export Data to CSV ---
-from pathlib import Path
-
-# 1. Define and Create Output Directory
 output_dir = Path("intermediate")
 output_dir.mkdir(parents=True, exist_ok=True)
 
-# 2. Export Fall Enrollment (Headcount)
 if "df_fall_enrollment" in locals():
-    enrollment_path = output_dir / "Fall_Enrollment_1997_2023.csv"
-    df_fall_enrollment.to_csv(enrollment_path)
-    print(f"Saved Fall Enrollment to: {enrollment_path.absolute()}")
-else:
-    print("df_fall_enrollment not found. Skipping export.")
+    path = output_dir / "Fall_Enrollment_2000_2024.csv"
+    df_fall_enrollment.to_csv(path)
+    print(f"Saved Fall Enrollment to: {path}")
 
-# 2. Export Non-Online Fall Enrollment
-if "df_campus_only" in locals():
-    # Naming it "Campus_Enrollment" to distinguish from Total
-    enrollment_path = output_dir / "Fall_Enrollment_CampusOnly_1997_2023.csv"
-    df_campus_only.to_csv(enrollment_path)
-    print(f"Saved Non-Online Enrollment to: {enrollment_path.absolute()}")
-
-# 3. Export Full-Time Equivalent (FTE)
 if "df_fte" in locals():
-    fte_path = output_dir / "FTE_Enrollment_1997_2023.csv"
-    df_fte.to_csv(fte_path)
-    print(f"Saved FTE to: {fte_path.absolute()}")
-else:
-    print("df_fte not found. Skipping export.")
+    path = output_dir / "FTE_Enrollment_2000_2024.csv"
+    df_fte.to_csv(path)
+    print(f"Saved FTE to: {path}")
 
-# 4. Export 12-Month Unduplicated Headcount
 if "df_effy" in locals():
-    effy_path = output_dir / "Headcount_12Month_1997_2023.csv"
-    df_effy.to_csv(effy_path)
-    print(f"Saved 12-Month Headcount to: {effy_path.absolute()}")
-else:
-    print("df_effy not found. Skipping export.")
+    path = output_dir / "Headcount_12Month_2000_2024.csv"
+    df_effy.to_csv(path)
+    print(f"Saved 12-Month Headcount to: {path}")
 ```

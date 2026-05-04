@@ -1,0 +1,12 @@
+﻿Year,EDGE Geocode,REST Service
+Current,NA,https://services1.arcgis.com/Ua5sjt3LWTPigjyD/arcgis/rest/services/Postsecondary_School_Locations_Current/FeatureServer/0
+2024,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2425.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2425/MapServer/0
+2023,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2324.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2324/MapServer/0
+2022,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECSCH_2223.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2223/MapServer/0
+2021,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_2122.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2122/MapServer/0
+2020,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_2021.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_2021/MapServer/0
+2019,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSEC_1920.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_1920/MapServer/0
+2018,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1819.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_1819/MapServer/0
+2017,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1718.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_1718/MapServer/0
+2016,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1617.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_1617/MapServer/0
+2015,https://nces.ed.gov/programs/edge/data/EDGE_GEOCODE_POSTSECONDARYSCH_1516.zip,https://nces.ed.gov/opengis/rest/services/Postsecondary_School_Locations/EDGE_GEOCODE_POSTSECONDARYSCH_1516/MapServer/0

@@ -64,7 +64,7 @@ PATHS = {
     # Cache files (intermediate data)
     "census_cache": Path("intermediate/Utah_Census_All_Counties_All_Ages_2000_2023.csv"),
     # Input data files
-    "enrollment_ipeds": Path("intermediate/Fall_Enrollment_1997_2023.csv"),
+    "enrollment_ipeds": Path("intermediate/Fall_Enrollment_InPerson_2000_2023.csv"),
     "gpi_data": Path("data/GPI/SchColAgeFS-Dec2022.xlsx"),
     "gpi_projections": Path(
         "data/GPI/Gardner-Policy-Institute-State-and-County-Projections-2025-2065-Data.xlsx"
@@ -92,11 +92,29 @@ TARGET_COUNTIES = [
 # Age range for college-age population (18-24) — matches GPI methodology
 COLLEGE_AGE_RANGES = ["18 and 19 years", "20 years", "21 years", "22 to 24 years"]
 
-# Train/test split: hold out 2020-2023 for model validation
-TEST_START_YEAR = 2020
+# Last year included in regression training. Set to 2019 to exclude COVID disruption
+# (the 2020-2021 dip permanently depresses slopes if included). Set to 2023 to train
+# on all available data including the recovery years.
+TRAIN_END_YEAR = 2020
+
+# Most recent year with actual IPEDS enrollment data. The model curve is shifted to
+# pass exactly through this year's actuals. Update each year as new data arrives.
+CALIB_YEAR = 2024
 
 # Global Toggles
-CALIB_SHIFT = True  # Toggle whether to shift model curves to meet 2023 actuals
+CALIB_SHIFT = True  # Toggle whether to shift model curves to meet CALIB_YEAR actuals
+
+# If True, freeze each school's participation rate at its CALIB_YEAR calibrated level
+# for all forecast years — growth comes from population change only, eliminating the
+# compounding of rate-trend × population-rebound that backloads growth to the 2050s.
+# Set to False to use the linearly extrapolated rate (current default behavior).
+FREEZE_RATE_AT_2023 = False
+
+# Share of UVU_Main enrollment reallocated to UVU_Geneva (951 S Geneva Rd, Orem).
+# Geneva is a small satellite campus adjacent to the main campus; this share is
+# subtracted from UVU_Main and assigned to UVU_Geneva in the final campus table.
+# Set to 0.0 to leave all enrollment at UVU_Main.
+UVU_GENEVA_SHARE = 0.05
 ```
 
 ```md
@@ -128,10 +146,192 @@ UVU_Payson = 3406   ;Future Nebo Belt Rd, Payson UT  (FUTURE CAMPUS)
 ### Utah System of Higher Education & IPEDS
 **Sources:** USHE and Integrated Postsecondary Education Data System (2000-2023)
 
-```{python}
-# Load IPEDS enrollment data (2000-2023)
-df_enroll_ipeds = pd.read_csv(PATHS["enrollment_ipeds"])
+In-person enrollment = students enrolled in **no** distance-education courses (`EFDENON`) + students enrolled in **some** distance-education courses / hybrid (`EFDESOM`). Exclusively online students are excluded as they generate no campus trips.
 
+| Years | Source | Method |
+|---|---|---|
+| 2012–2024 | `EF{YEAR}A_DIST` table in IPEDS Access DB | `EFDENON + EFDESOM` where `EFDELEV == 1` |
+| 2008–2011 | `EF{YEAR}A` table in IPEDS Access DB | `EFTOTLT` max per institution (total proxy) |
+| 2004–2007 | `EF{YEAR}A` table in IPEDS Access DB | `EFRACE15 + EFRACE16` max per institution |
+| 2000–2003 | Cached CSV in `data/IPEDS_Raw/` | `EFRACE15 + EFRACE16` max per institution |
+
+Results are cached to `intermediate/Fall_Enrollment_InPerson_2000_2023.csv` after the first run.
+
+```{python}
+import zipfile, io, tempfile, pyodbc, requests
+
+id_map = {
+    230038: "BYU",
+    230418: "Ensign",
+    230746: "SLCC",
+    230764: "UofU",
+    230737: "UVU",
+    230782: "WSU",
+    230807: "Westmin",
+}
+target_cols = ["BYU", "Ensign", "SLCC", "UofU", "UVU", "WSU", "Westmin"]
+
+enroll_cache = PATHS["enrollment_ipeds"]
+
+if enroll_cache.exists():
+    df_enroll_ipeds = pd.read_csv(enroll_cache, index_col="Year")
+    print(f"Loaded enrollment from cache: {enroll_cache}")
+else:
+    IPEDS_ACCESS_URLS = {
+        2024: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2024-25_Provisional.zip",
+        2023: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2023-24_Final.zip",
+        2022: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2022-23_Final.zip",
+        2021: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2021-22_Final.zip",
+        2020: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2020-21_Final.zip",
+        2019: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2019-20_Final.zip",
+        2018: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2018-19_Final.zip",
+        2017: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2017-18_Final.zip",
+        2016: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2016-17_Final.zip",
+        2015: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2015-16_Final.zip",
+        2014: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2014-15_Final.zip",
+        2013: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2013-14_Final.zip",
+        2012: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2012-13_Final.zip",
+        2011: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2011-12_Final.zip",
+        2010: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2010-11_Final.zip",
+        2009: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2009-10_Final.zip",
+        2008: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2008-09_Final.zip",
+        2007: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2007-08_Final.zip",
+        2006: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2006-07_Final.zip",
+        2005: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2005-06_Final.zip",
+        2004: "https://nces.ed.gov/ipeds/tablefiles/zipfiles/IPEDS_2004-05_Final.zip",
+    }
+
+    IPEDS_CSV_URLS = {
+        **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A_DIST.zip" for year in range(2012, 2024)},
+        **{year: f"https://nces.ed.gov/ipeds/tablefiles/zipfiles/EF{year}A.zip" for year in range(2000, 2012)},
+    }
+    raw_dir = Path("data/IPEDS_Raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    de_frames  = []   # 2012–2024: EF{YEAR}A_DIST, in-person = EFDENON + EFDESOM
+    pre_frames = []   # 2004–2011: EF{YEAR}A, total enrollment as proxy
+
+    for year, url in IPEDS_ACCESS_URLS.items():
+        zip_path = Path("data/IPEDS_Access") / url.split("/")[-1]
+        if not zip_path.exists():
+            # Fallback: download and read the individual IPEDS CSV file
+            csv_url = IPEDS_CSV_URLS.get(year)
+            if csv_url is None:
+                print(f"No CSV fallback available for {year}, skipping")
+                continue
+            suffix   = "a_dist" if year >= 2012 else "a"
+            csv_path = raw_dir / f"ef{year}{suffix}.csv"
+            if not csv_path.exists():
+                r = requests.get(csv_url, timeout=60)
+                r.raise_for_status()
+                with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                    csv_name = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                    csv_path.write_bytes(z.read(csv_name))
+                print(f"Downloaded CSV fallback for {year}")
+            df = pd.read_csv(csv_path, encoding="latin1", low_memory=False)
+            df.columns = df.columns.str.upper()
+            df["Year"] = year
+            (de_frames if year >= 2012 else pre_frames).append(df)
+            print(f"CSV fallback {year}", end=" ")
+            continue
+        with zipfile.ZipFile(zip_path) as z, tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            # Discover accdb name at runtime (some years nest inside a subdirectory)
+            accdb_in_zip = next(f for f in z.namelist() if f.endswith(".accdb"))
+            z.extract(accdb_in_zip, tmp)
+            accdb_path = Path(tmp) / accdb_in_zip
+            conn_str   = f"Driver={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={accdb_path}"
+            conn = pyodbc.connect(conn_str)
+            try:
+                if year >= 2012:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFDELEV, EFDENON, EFDESOM FROM [EF{year}A_DIST]",
+                        conn,
+                    )
+                    df["Year"] = year
+                    de_frames.append(df)
+                elif year >= 2008:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFTOTLT FROM [EF{year}A]", conn
+                    )
+                    df["Year"] = year
+                    pre_frames.append(df)
+                else:
+                    df = pd.read_sql(
+                        f"SELECT UNITID, EFRACE15, EFRACE16 FROM [EF{year}A]", conn
+                    )
+                    df["Year"] = year
+                    pre_frames.append(df)
+            finally:
+                conn.close()
+                del conn
+        print(f"Queried {year}", end=" ")
+
+    # 2012–2024: vectorized EFDENON + EFDESOM on grand-total rows
+    df_de = (
+        pd.concat(de_frames, ignore_index=True)
+        .query("EFDELEV == 1 and UNITID in @id_map")
+        .assign(InPerson=lambda x: x["EFDENON"].fillna(0) + x["EFDESOM"].fillna(0))
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # 2004–2011: concat fills missing columns with NaN; np.where selects the right total
+    df_pre = (
+        pd.concat(pre_frames, ignore_index=True)
+        .query("UNITID in @id_map")
+        .assign(
+            InPerson=lambda x: np.where(
+                x["EFTOTLT"].notna(),
+                x["EFTOTLT"].fillna(0),
+                x["EFRACE15"].fillna(0) + x["EFRACE16"].fillna(0),
+            )
+        )
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # 2000–2003: no Access DB available; download CSV if not already cached
+    legacy_frames = []
+    for year in range(2000, 2004):
+        csv_path = raw_dir / f"ef{year}a.csv"
+        if not csv_path.exists():
+            r = requests.get(IPEDS_CSV_URLS[year], timeout=60)
+            r.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                csv_name = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                csv_path.write_bytes(z.read(csv_name))
+            print(f"Downloaded {csv_path.name}")
+        df = pd.read_csv(csv_path, encoding="latin1", low_memory=False)
+        df.columns = df.columns.str.upper()
+        df["Year"] = year
+        legacy_frames.append(df)
+    df_legacy = (
+        pd.concat(legacy_frames, ignore_index=True)
+        .query("UNITID in @id_map")
+        .assign(InPerson=lambda x: x["EFRACE15"].fillna(0) + x["EFRACE16"].fillna(0))
+        [["UNITID", "Year", "InPerson"]]
+    )
+
+    # Combine → .max() per (Year, UNITID) collapses disaggregated rows to grand total
+    df_enroll_ipeds = (
+        pd.concat([df_de, df_pre, df_legacy], ignore_index=True)
+        .groupby(["Year", "UNITID"])["InPerson"]
+        .max()
+        .reset_index()
+        .assign(Inst=lambda x: x["UNITID"].map(id_map))
+        .pivot_table(index="Year", columns="Inst", values="InPerson", aggfunc="sum")
+        .reindex(columns=target_cols, fill_value=0)
+        .astype(int)
+    )
+    df_enroll_ipeds.columns.name = None
+
+    enroll_cache.parent.mkdir(exist_ok=True)
+    df_enroll_ipeds.to_csv(enroll_cache)
+    print(f"\nCached to {enroll_cache}")
+
+print("\n=== In-Person Fall Enrollment (2000–2023) ===")
+print(df_enroll_ipeds)
+```
+
+```{python}
 # Historical enrollment data from 2019 RTP (1990-1999)
 df_enroll_rtp19 = pd.DataFrame(
     {
@@ -634,7 +834,7 @@ $$\text{Rate}_{year} = \frac{\text{Actual Enrollment}_{year}}{\text{Weighted Pop
 
 ```{python}
 # Compute historic participation rates
-df_ipeds = df_enroll_ipeds.set_index("Year").sort_index()
+df_ipeds = df_enroll_ipeds.sort_index()
 df_hist_rates = pd.DataFrame(index=range(2000, 2024))
 for key in SCHOOL_KEYS:
     df_hist_rates[key] = (
@@ -648,13 +848,14 @@ display(df_hist_rates.tail().style.format("{:.2%}"))
 ## Step 4 — Linear Regression Model
 We fit a linear trend to each university's historical participation rate:
 $$\text{Rate}(t) = \alpha + \beta \cdot t, \quad t = \text{Year} - 1999$$
-The model is trained on 2000–`{python} (TEST_START_YEAR - 1)` and evaluated on `{python} TEST_START_YEAR`–2023.
+The model is trained on 2000–`{python} TRAIN_END_YEAR` using all available historical data, including the 2020–2023 COVID disruption and recovery period.
 
 ```{python}
 models_dict      = {}
 model_metrics    = []
 residual_records = []
-t_2023 = 2023 - 1999
+t_2023 = 2023 - 1999  # kept for residual alignment; calibration uses t_calib below
+t_calib = CALIB_YEAR - 1999
 
 for key in SCHOOL_KEYS:
     full_name    = DISPLAY_NAMES[key]
@@ -664,21 +865,16 @@ for key in SCHOOL_KEYS:
     t_arr        = years_arr - 1999
     X            = t_arr.reshape(-1, 1)
 
-    train_mask  = years_arr < TEST_START_YEAR
-    test_mask   = ~train_mask
+    train_mask  = years_arr <= TRAIN_END_YEAR
     years_train = years_arr[train_mask].astype(int)
-    years_test  = years_arr[test_mask].astype(int)
     rates_train = rates_arr[train_mask]
-    rates_test  = rates_arr[test_mask]
     X_train     = X[train_mask]
-    X_test      = X[test_mask]
 
     model = LinearRegression().fit(X_train, rates_train)
     models_dict[key] = model
     alpha      = float(model.intercept_)
     beta       = float(model.coef_[0])
     pred_train = model.predict(X_train)
-    pred_test  = model.predict(X_test) if test_mask.any() else None
 
     # Train Metrics
     pop_train         = df_weighted_hist.loc[years_train, key].values
@@ -692,49 +888,28 @@ for key in SCHOOL_KEYS:
         "Alpha": round(alpha, 4), "Beta": round(beta, 4), "R2": round(r2_train, 4), "MAPE": round(mape_train, 4),
     })
 
-    # Collect Residuals (Train)
+    # Collect Residuals
     for yr, act, pred in zip(years_train, enroll_act_train, enroll_pred_train):
         residual_records.append({
             "Year": int(yr), "University": full_name, "Actual": float(act), "Predicted": float(pred),
             "Residual": float(act - pred), "APE": float(abs(act - pred)/act) if act != 0 else 0,
             "Method": "Base Linear", "Dataset": "Train"
         })
-
-    # Test Metrics
-    if test_mask.any():
-        pop_test          = df_weighted_hist.loc[years_test, key].values
-        enroll_act_test   = df_ipeds.loc[years_test, key].values
-        enroll_pred_test  = pred_test * pop_test
-        r2_test           = r2_score(rates_test, pred_test)
-        mape_test         = mean_absolute_percentage_error(enroll_act_test, enroll_pred_test)
-
-        model_metrics.append({
-            "University": full_name, "Dataset": "Test", "Method": "Base Linear",
-            "Alpha": round(alpha, 4), "Beta": round(beta, 4), "R2": round(r2_test, 4), "MAPE": round(mape_test, 4),
-        })
-
-        # Collect Residuals (Test)
-        for yr, act, pred in zip(years_test, enroll_act_test, enroll_pred_test):
-            residual_records.append({
-                "Year": int(yr), "University": full_name, "Actual": float(act), "Predicted": float(pred),
-                "Residual": float(act - pred), "APE": float(abs(act - pred)/act) if act != 0 else 0,
-                "Method": "Base Linear", "Dataset": "Test"
-            })
 ```
 
 ## Step 5 — Calibration Shift Calculation
 
-Computes a per-school additive shift in RATE units so the model passes exactly through the 2023 actual enrollment when `CALIB_SHIFT = True`.
+Computes a per-school additive shift in RATE units so the model passes exactly through the `CALIB_YEAR` actual enrollment when `CALIB_SHIFT = True`.
 
 ```{python}
 shift_factors = {}
 for key in SCHOOL_KEYS:
-    model_rate_2023 = float(models_dict[key].predict(np.array([[t_2023]]))[0])
-    actual_enroll_2023 = float(df_ipeds.loc[2023, key])
-    gpi_pop_2023 = float(df_weighted_proj.loc[2023, key])
-    implied_gpi_rate_2023 = actual_enroll_2023 / gpi_pop_2023
+    model_rate_calib = float(models_dict[key].predict(np.array([[t_calib]]))[0])
+    actual_enroll_calib = float(df_ipeds.loc[CALIB_YEAR, key])
+    gpi_pop_calib = float(df_weighted_proj.loc[CALIB_YEAR, key])
+    implied_gpi_rate_calib = actual_enroll_calib / gpi_pop_calib
 
-    shift = (implied_gpi_rate_2023 - model_rate_2023) if CALIB_SHIFT else 0.0
+    shift = (implied_gpi_rate_calib - model_rate_calib) if CALIB_SHIFT else 0.0
     shift_factors[key] = shift
 
 display(Markdown("**Calibration Shifts (Base Linear Models):**"))
@@ -754,7 +929,7 @@ total_pop_hist_5cty = df_census_full[TARGET_COUNTIES].sum(axis=1).loc[2000:2023]
 regional_rate_hist  = (total_enroll_hist / total_pop_hist_5cty).dropna()
 
 HIST_MAX_PENETRATION = float(regional_rate_hist.max())
-PENETRATION_CEILING  = HIST_MAX_PENETRATION * 1.02   # 2% buffer above historical peak
+PENETRATION_CEILING  = HIST_MAX_PENETRATION * 1.10   # 10% buffer above historical peak
 
 FORECAST_YEARS   = list(range(2024, 2061))
 df_total_gpi_pop = df_gpi_ext[TARGET_COUNTIES].sum(axis=1)
@@ -769,11 +944,14 @@ for year in FORECAST_YEARS:
 
     raw = {}
     for key in SCHOOL_KEYS:
-        model_rate = float(models_dict[key].predict(np.array([[t]]))[0])
+        if FREEZE_RATE_AT_2023:
+            model_rate = float(models_dict[key].predict(np.array([[t_calib]]))[0])
+        else:
+            model_rate = float(models_dict[key].predict(np.array([[t]]))[0])
 
         # Decay calibration shift to zero over 10 years for WESTMIN only
         if key == "Westmin":
-            decay_factor = max(0.0, 1.0 - (year - 2023) / 10.0) if CALIB_SHIFT else 0.0
+            decay_factor = max(0.0, 1.0 - (year - CALIB_YEAR) / 10.0) if CALIB_SHIFT else 0.0
             active_shift = shift_factors[key] * decay_factor
         else:
             active_shift = shift_factors[key]
@@ -831,14 +1009,10 @@ for key in FLAGSHIP_KEYS:
     t_arr = years_arr - 1999
     X = t_arr.reshape(-1, 1)
 
-    train_mask = years_arr < TEST_START_YEAR
-    test_mask = ~train_mask
+    train_mask = years_arr <= TRAIN_END_YEAR
     years_train = years_arr[train_mask].astype(int)
-    years_test = years_arr[test_mask].astype(int)
     enroll_train = enroll_arr[train_mask]
-    enroll_test = enroll_arr[test_mask]
     X_train = X[train_mask]
-    X_test = X[test_mask]
 
     model = LinearRegression().fit(X_train, enroll_train)
     flagship_models[key] = model
@@ -846,7 +1020,6 @@ for key in FLAGSHIP_KEYS:
     alpha = float(model.intercept_)
     beta = float(model.coef_[0])
     pred_train = model.predict(X_train)
-    pred_test = model.predict(X_test) if test_mask.any() else None
 
     # Flagship Train Metrics
     r2_train = r2_score(enroll_train, pred_train)
@@ -878,49 +1051,16 @@ for key in FLAGSHIP_KEYS:
             }
         )
 
-    # Flagship Test Metrics
-    if test_mask.any():
-        r2_test = r2_score(enroll_test, pred_test)
-        mape_test = mean_absolute_percentage_error(enroll_test, pred_test)
-        flagship_metrics.append(
-            {
-                "University": full_name,
-                "Dataset": "Test",
-                "Method": "Direct Flagship Override",
-                "Alpha": round(alpha, 1),
-                "Beta": round(beta, 1),
-                "R2": round(r2_test, 4),
-                "MAPE": round(mape_test, 4),
-            }
-        )
-
-        # Collect Residuals (Test)
-        for yr, act, pred in zip(years_test, enroll_test, pred_test):
-            residual_records.append(
-                {
-                    "Year": int(yr),
-                    "University": full_name,
-                    "Actual": float(act),
-                    "Predicted": float(pred),
-                    "Residual": float(act - pred),
-                    "APE": float(abs(act - pred) / act) if act != 0 else 0,
-                    "Method": "Direct Flagship Override",
-                    "Dataset": "Test",
-                }
-            )
-
     # Calibration Shift for Override (in enrollment units)
-    model_enroll_2023 = float(model.predict(np.array([[t_2023]]))[0])
-    actual_enroll_2023 = float(df_ipeds.loc[2023, key])
-    flagship_shifts[key] = (
-        (actual_enroll_2023 - model_enroll_2023) if CALIB_SHIFT else 0.0
-    )
+    model_enroll_calib = float(model.predict(np.array([[t_calib]]))[0])
+    actual_enroll_calib = float(df_ipeds.loc[CALIB_YEAR, key])
+    flagship_shifts[key] = (actual_enroll_calib - model_enroll_calib) if CALIB_SHIFT else 0.0
 
 display(Markdown("**Calibration Shifts (Flagship Direct Models - Students):**"))
 display(
-    pd.DataFrame.from_dict(
-        flagship_shifts, orient="index", columns=["Enrollment Shift"]
-    ).astype(int)
+    pd.DataFrame.from_dict(flagship_shifts, orient="index", columns=["Enrollment Shift"]).astype(
+        int
+    )
 )
 
 # Generate Override Forecast
@@ -944,10 +1084,7 @@ df_flagship_override = pd.DataFrame(flagship_override_records)
 
 # Drop original BYU/UofU projected rows and substitute flagship overrides
 df_forecast_adjusted = pd.concat(
-    [
-        df_forecast_base[~df_forecast_base["Univ_Code"].isin(FLAGSHIP_KEYS)],
-        df_flagship_override,
-    ],
+    [df_forecast_base[~df_forecast_base["Univ_Code"].isin(FLAGSHIP_KEYS)], df_flagship_override],
     ignore_index=True,
 ).sort_values(["Univ_Code", "Year"])
 ```
@@ -1197,7 +1334,7 @@ print(
 # Forecast: df_forecast_adjusted
 
 # Prepare historical data
-df_hist_inst = df_enroll_ipeds.copy()
+df_hist_inst = df_enroll_ipeds.reset_index()
 df_hist_inst = df_hist_inst[df_hist_inst['Year'].between(2000, 2023)].copy()
 
 # Melt to long format with proper column names
@@ -1355,6 +1492,12 @@ for col in COLUMN_ORDER:
     if col != ";YEAR":
         df_campus_final[col] = df_campus_final[col].fillna(0).astype(int)
 
+# Reallocate a share of UVU_Main to UVU_Geneva
+if UVU_GENEVA_SHARE > 0:
+    geneva = (df_campus_final["UVU_Main"] * UVU_GENEVA_SHARE).round().astype(int)
+    df_campus_final["UVU_Geneva"] = geneva
+    df_campus_final["UVU_Main"]   = df_campus_final["UVU_Main"] - geneva
+
 # Display summary
 print("\n=== Campus-Level Enrollment Forecast (2000-2060) ===")
 print("\nFirst 5 years:")
@@ -1370,6 +1513,7 @@ print(df_campus_final.tail())
 df_campus_final_check = df_campus_final.copy()
 df_campus_final_check["UVU_Total_Check"] = (
     df_campus_final_check["UVU_Main"]
+    + df_campus_final_check["UVU_Geneva"]
     + df_campus_final_check["UVU_Lehi"]
     + df_campus_final_check["UVU_Payson"]
     + df_campus_final_check["UVU_Vineyard"]
@@ -1379,7 +1523,7 @@ print("\n=== UVU Total Verification (Sample Years) ===")
 verification_years = [2000, 2019, 2026, 2029, 2050, 2060]
 print(
     df_campus_final_check[df_campus_final_check[";YEAR"].isin(verification_years)][
-        [";YEAR", "UVU_Main", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard", "UVU_Total_Check"]
+        [";YEAR", "UVU_Main", "UVU_Geneva", "UVU_Lehi", "UVU_Payson", "UVU_Vineyard", "UVU_Total_Check"]
     ].to_string(index=False)
 )
 ```
@@ -1411,7 +1555,7 @@ df_all_metrics = pd.concat(
 df_residuals = pd.DataFrame(residual_records)
 
 # ── Prepare Forecast Data for OJS ─────────────────────────────────────────────
-df_history_long = df_enroll_ipeds.melt(
+df_history_long = df_enroll_ipeds.reset_index().melt(
     id_vars=["Year"], var_name="Univ_Code", value_name="Enrollment"
 ).dropna()
 df_history_long["University"] = df_history_long["Univ_Code"].map(DISPLAY_NAMES)
@@ -1455,11 +1599,11 @@ ojs_define(
 
 ## Model Performance
 
-The following tables and charts display the accuracy (R² and Mean Absolute Percentage Error) for both the Base Linear Model (participation rate) and the Direct Flagship Override method. The Test dataset represents performance against the held-out 2020–2023 actuals.
+The following tables and charts display the accuracy (R² and Mean Absolute Percentage Error) for both the Base Linear Model (participation rate) and the Direct Flagship Override method. Models are trained on all available historical data (2000–2023), including the COVID disruption and recovery years.
 
 **How to interpret these metrics:**
 
-* **$R^2$ Score:** Measures how much of the historical enrollment trend is explained by our model. You want this number as close to `1.0` as possible. Compare the "Train" and "Test" scores—a massive drop in the Test score suggests the model is overfitting to past data and struggling with recent years.
+* **$R^2$ Score:** Measures how much of the historical enrollment trend is explained by our model. You want this number as close to `1.0` as possible.
 * **MAPE (Mean Absolute Percentage Error):** The average percentage difference between the model's prediction and the actual enrollment. Lower is better. A MAPE of `2%` means the model is usually off by about 2% of the total student body.
 
 ```{ojs}
@@ -1476,7 +1620,7 @@ Inputs.table(data_model_metrics, {
 
 ```{ojs}
 //| label: fig-metrics-bar
-//| fig-cap: "R² Accuracy Score by University (Test Dataset vs Train Dataset)"
+//| fig-cap: "R² Accuracy Score by University (Training Data 2000–2023)"
 
 Plot.plot({
   marks: [
