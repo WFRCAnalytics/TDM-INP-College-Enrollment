@@ -1555,7 +1555,7 @@ Representative point per campus, geocoded via the US Census Geocoder (existing c
 MAZ_ENROLLMENT_YEAR = 2023
 
 PATHS["maz_shapefile"] = Path("data/TAZ/microzones_draft_20260610AndyaddedmazidforUtah.zip")
-PATHS["maz_enrollment_output"] = Path(f"results/college_enrollment_maz_{MAZ_ENROLLMENT_YEAR}.shp")
+PATHS["maz_enrollment_output"] = Path(f"results/college_enrollment_maz_{MAZ_ENROLLMENT_YEAR}.shp.zip")
 
 # WFRC + MAG area colleges — keys match the campus columns in df_campus_final
 CAMPUS_LOCATIONS = {

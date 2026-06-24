@@ -521,7 +521,7 @@ window.Quarto = {
 <h1 data-number="2"><span class="header-section-number">2</span> Configuration &amp; Setup</h1>
 <section id="file-paths-settings" class="level2" data-number="2.1">
 <h2 data-number="2.1" class="anchored" data-anchor-id="file-paths-settings"><span class="header-section-number">2.1</span> File Paths &amp; Settings</h2>
-<div id="af71de72" class="cell" data-execution_count="1">
+<div id="e70016b6" class="cell" data-execution_count="1">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
@@ -660,7 +660,7 @@ window.Quarto = {
 </tbody>
 </table>
 <p>Results are cached to <code>intermediate/Fall_Enrollment_InPerson_2000_2023.csv</code> after the first run.</p>
-<div id="d113b356" class="cell" data-execution_count="2">
+<div id="1d49b68f" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> zipfile, io, tempfile, pyodbc, requests</span>
@@ -868,7 +868,7 @@ Year
 2024  34975    1663  22753  34645  40152  27593     1136</code></pre>
 </div>
 </div>
-<div id="aeef1780" class="cell" data-execution_count="3">
+<div id="ad35e0ea" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Historical enrollment data from 2019 RTP (1990-1999)</span></span>
@@ -891,7 +891,7 @@ Year
 <section id="us-census-bureau" class="level3">
 <h3 class="anchored" data-anchor-id="us-census-bureau">US Census Bureau</h3>
 <p>We define a crosswalk to extract historical 18-24 population cohorts from Census Summary Files and the American Community Survey.</p>
-<div id="d3064fe4" class="cell" data-execution_count="4">
+<div id="503d0ec6" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># --- 1. Define Variable Crosswalk (Metadata) ---</span></span>
@@ -951,7 +951,7 @@ Year
 <span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>var_crosswalk[<span class="st">"Label"</span>] <span class="op">=</span> var_crosswalk[<span class="st">"Gender"</span>] <span class="op">+</span> <span class="st">": "</span> <span class="op">+</span> var_crosswalk[<span class="st">"Age"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="9984f034" class="cell" data-execution_count="5">
+<div id="9081df1d" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># --- 2. Fetch &amp; Cache Census Data ---</span></span>
@@ -996,7 +996,7 @@ Year
 <pre><code>Using cached Census data from intermediate\Utah_Census_All_Counties_All_Ages_2000_2023.csv</code></pre>
 </div>
 </div>
-<div id="164b0ff9" class="cell" data-execution_count="6">
+<div id="c9451e9c" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Toggle ON (eval: true) to use Census API via pygris</span></span>
@@ -1021,7 +1021,7 @@ Year
 </section>
 <section id="timeseries-data-from-nhgis" class="level3">
 <h3 class="anchored" data-anchor-id="timeseries-data-from-nhgis">Timeseries Data from NHGIS</h3>
-<div id="5f0d6d63" class="cell" data-execution_count="7">
+<div id="cc14b0a0" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Toggle ON (eval: true) to fetch from IPUMS NHGIS API</span></span>
@@ -1066,7 +1066,7 @@ Year
 <span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Error: IPUMS_API_KEY not found in .env file."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="a6ca689c" class="cell" data-execution_count="8">
+<div id="9d8fb87d" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load and process NHGIS time-series data</span></span>
@@ -1130,7 +1130,7 @@ Year
 <section id="forecast-kem-c.-gardner-policy-institute-2025-2060" class="level3">
 <h3 class="anchored" data-anchor-id="forecast-kem-c.-gardner-policy-institute-2025-2060">Forecast: Kem C. Gardner Policy Institute (2025-2060)</h3>
 <p>The Kem C. Gardner Policy Institute (GPI) provides the official projected demographic counts for Utah counties.</p>
-<div id="0706c0a4" class="cell" data-execution_count="9">
+<div id="0ba9d79d" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Primary forecast data: county-level GPI projections (2025–2065)</span></span>
@@ -1171,7 +1171,7 @@ Year
 <h1 data-number="4"><span class="header-section-number">4</span> Data Exploration</h1>
 <section id="college-age-1824-population-trend" class="level2" data-number="4.1">
 <h2 data-number="4.1" class="anchored" data-anchor-id="college-age-1824-population-trend"><span class="header-section-number">4.1</span> College Age (18–24) Population Trend</h2>
-<div id="a2c98877" class="cell" data-execution_count="10">
+<div id="8a5298b0" class="cell" data-execution_count="10">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Melt both sources to long for plotting</span></span>
@@ -1254,7 +1254,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-1-define-addressable-markets-catchment-weights" class="level2" data-number="5.2">
 <h2 data-number="5.2" class="anchored" data-anchor-id="step-1-define-addressable-markets-catchment-weights"><span class="header-section-number">5.2</span> Step 1 — Define Addressable Markets (Catchment Weights)</h2>
 <p>We programmatically extract the USHE derived weights for our public institutions and combine them with the explicit private institution boundaries.</p>
-<div id="5f1e3574" class="cell" data-execution_count="11">
+<div id="f7ed2402" class="cell" data-execution_count="11">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>TARGET_COLLEGES <span class="op">=</span> [<span class="st">"UOFU"</span>, <span class="st">"BYU"</span>, <span class="st">"UVU"</span>, <span class="st">"SLCC"</span>, <span class="st">"WSU"</span>, <span class="st">"Ensign"</span>, <span class="st">"Westmin"</span>]</span>
@@ -1376,69 +1376,69 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <style type="text/css">
 </style>
 
-<table id="T_82a26" class="caption-top table table-sm table-striped small">
+<table id="T_f304c" class="caption-top table table-sm table-striped small">
 <thead>
 <tr class="header">
 <th class="blank level0" data-quarto-table-cell-role="th">&nbsp;</th>
-<th id="T_82a26_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">BYU</th>
-<th id="T_82a26_level0_col1" class="col_heading level0 col1" data-quarto-table-cell-role="th">Ensign</th>
-<th id="T_82a26_level0_col2" class="col_heading level0 col2" data-quarto-table-cell-role="th">Westmin</th>
-<th id="T_82a26_level0_col3" class="col_heading level0 col3" data-quarto-table-cell-role="th">UofU</th>
-<th id="T_82a26_level0_col4" class="col_heading level0 col4" data-quarto-table-cell-role="th">UVU</th>
-<th id="T_82a26_level0_col5" class="col_heading level0 col5" data-quarto-table-cell-role="th">WSU</th>
-<th id="T_82a26_level0_col6" class="col_heading level0 col6" data-quarto-table-cell-role="th">SLCC</th>
+<th id="T_f304c_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">BYU</th>
+<th id="T_f304c_level0_col1" class="col_heading level0 col1" data-quarto-table-cell-role="th">Ensign</th>
+<th id="T_f304c_level0_col2" class="col_heading level0 col2" data-quarto-table-cell-role="th">Westmin</th>
+<th id="T_f304c_level0_col3" class="col_heading level0 col3" data-quarto-table-cell-role="th">UofU</th>
+<th id="T_f304c_level0_col4" class="col_heading level0 col4" data-quarto-table-cell-role="th">UVU</th>
+<th id="T_f304c_level0_col5" class="col_heading level0 col5" data-quarto-table-cell-role="th">WSU</th>
+<th id="T_f304c_level0_col6" class="col_heading level0 col6" data-quarto-table-cell-role="th">SLCC</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<th id="T_82a26_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">Box Elder County</th>
-<td id="T_82a26_row0_col0" class="data row0 col0">0.0%</td>
-<td id="T_82a26_row0_col1" class="data row0 col1">0.0%</td>
-<td id="T_82a26_row0_col2" class="data row0 col2">0.0%</td>
-<td id="T_82a26_row0_col3" class="data row0 col3">0.2%</td>
-<td id="T_82a26_row0_col4" class="data row0 col4">0.3%</td>
-<td id="T_82a26_row0_col5" class="data row0 col5">3.3%</td>
-<td id="T_82a26_row0_col6" class="data row0 col6">0.3%</td>
+<th id="T_f304c_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">Box Elder County</th>
+<td id="T_f304c_row0_col0" class="data row0 col0">0.0%</td>
+<td id="T_f304c_row0_col1" class="data row0 col1">0.0%</td>
+<td id="T_f304c_row0_col2" class="data row0 col2">0.0%</td>
+<td id="T_f304c_row0_col3" class="data row0 col3">0.2%</td>
+<td id="T_f304c_row0_col4" class="data row0 col4">0.3%</td>
+<td id="T_f304c_row0_col5" class="data row0 col5">3.3%</td>
+<td id="T_f304c_row0_col6" class="data row0 col6">0.3%</td>
 </tr>
 <tr class="even">
-<th id="T_82a26_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">Davis County</th>
-<td id="T_82a26_row1_col0" class="data row1 col0">2.5%</td>
-<td id="T_82a26_row1_col1" class="data row1 col1">15.0%</td>
-<td id="T_82a26_row1_col2" class="data row1 col2">6.5%</td>
-<td id="T_82a26_row1_col3" class="data row1 col3">8.3%</td>
-<td id="T_82a26_row1_col4" class="data row1 col4">4.4%</td>
-<td id="T_82a26_row1_col5" class="data row1 col5">40.8%</td>
-<td id="T_82a26_row1_col6" class="data row1 col6">7.0%</td>
+<th id="T_f304c_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">Davis County</th>
+<td id="T_f304c_row1_col0" class="data row1 col0">2.5%</td>
+<td id="T_f304c_row1_col1" class="data row1 col1">15.0%</td>
+<td id="T_f304c_row1_col2" class="data row1 col2">6.5%</td>
+<td id="T_f304c_row1_col3" class="data row1 col3">8.3%</td>
+<td id="T_f304c_row1_col4" class="data row1 col4">4.4%</td>
+<td id="T_f304c_row1_col5" class="data row1 col5">40.8%</td>
+<td id="T_f304c_row1_col6" class="data row1 col6">7.0%</td>
 </tr>
 <tr class="odd">
-<th id="T_82a26_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">Weber County</th>
-<td id="T_82a26_row2_col0" class="data row2 col0">2.5%</td>
-<td id="T_82a26_row2_col1" class="data row2 col1">0.0%</td>
-<td id="T_82a26_row2_col2" class="data row2 col2">0.0%</td>
-<td id="T_82a26_row2_col3" class="data row2 col3">2.3%</td>
-<td id="T_82a26_row2_col4" class="data row2 col4">0.6%</td>
-<td id="T_82a26_row2_col5" class="data row2 col5">45.8%</td>
-<td id="T_82a26_row2_col6" class="data row2 col6">1.4%</td>
+<th id="T_f304c_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">Weber County</th>
+<td id="T_f304c_row2_col0" class="data row2 col0">2.5%</td>
+<td id="T_f304c_row2_col1" class="data row2 col1">0.0%</td>
+<td id="T_f304c_row2_col2" class="data row2 col2">0.0%</td>
+<td id="T_f304c_row2_col3" class="data row2 col3">2.3%</td>
+<td id="T_f304c_row2_col4" class="data row2 col4">0.6%</td>
+<td id="T_f304c_row2_col5" class="data row2 col5">45.8%</td>
+<td id="T_f304c_row2_col6" class="data row2 col6">1.4%</td>
 </tr>
 <tr class="even">
-<th id="T_82a26_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">Salt Lake County</th>
-<td id="T_82a26_row3_col0" class="data row3 col0">20.0%</td>
-<td id="T_82a26_row3_col1" class="data row3 col1">70.0%</td>
-<td id="T_82a26_row3_col2" class="data row3 col2">90.0%</td>
-<td id="T_82a26_row3_col3" class="data row3 col3">81.0%</td>
-<td id="T_82a26_row3_col4" class="data row3 col4">20.8%</td>
-<td id="T_82a26_row3_col5" class="data row3 col5">7.9%</td>
-<td id="T_82a26_row3_col6" class="data row3 col6">83.4%</td>
+<th id="T_f304c_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">Salt Lake County</th>
+<td id="T_f304c_row3_col0" class="data row3 col0">20.0%</td>
+<td id="T_f304c_row3_col1" class="data row3 col1">70.0%</td>
+<td id="T_f304c_row3_col2" class="data row3 col2">90.0%</td>
+<td id="T_f304c_row3_col3" class="data row3 col3">81.0%</td>
+<td id="T_f304c_row3_col4" class="data row3 col4">20.8%</td>
+<td id="T_f304c_row3_col5" class="data row3 col5">7.9%</td>
+<td id="T_f304c_row3_col6" class="data row3 col6">83.4%</td>
 </tr>
 <tr class="odd">
-<th id="T_82a26_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">Utah County</th>
-<td id="T_82a26_row4_col0" class="data row4 col0">75.0%</td>
-<td id="T_82a26_row4_col1" class="data row4 col1">15.0%</td>
-<td id="T_82a26_row4_col2" class="data row4 col2">3.5%</td>
-<td id="T_82a26_row4_col3" class="data row4 col3">8.1%</td>
-<td id="T_82a26_row4_col4" class="data row4 col4">73.9%</td>
-<td id="T_82a26_row4_col5" class="data row4 col5">2.2%</td>
-<td id="T_82a26_row4_col6" class="data row4 col6">7.9%</td>
+<th id="T_f304c_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">Utah County</th>
+<td id="T_f304c_row4_col0" class="data row4 col0">75.0%</td>
+<td id="T_f304c_row4_col1" class="data row4 col1">15.0%</td>
+<td id="T_f304c_row4_col2" class="data row4 col2">3.5%</td>
+<td id="T_f304c_row4_col3" class="data row4 col3">8.1%</td>
+<td id="T_f304c_row4_col4" class="data row4 col4">73.9%</td>
+<td id="T_f304c_row4_col5" class="data row4 col5">2.2%</td>
+<td id="T_f304c_row4_col6" class="data row4 col6">7.9%</td>
 </tr>
 </tbody>
 </table>
@@ -1448,7 +1448,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-2-weighted-populations" class="level2" data-number="5.3">
 <h2 data-number="5.3" class="anchored" data-anchor-id="step-2-weighted-populations"><span class="header-section-number">5.3</span> Step 2 — Weighted Populations</h2>
 <p>We multiply the 18-24 population of a county by the catchment weight to get the <strong>Weighted Population</strong>.</p>
-<div id="b5bf1930" class="cell" data-execution_count="12">
+<div id="0d501f08" class="cell" data-execution_count="12">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Interpolate Census data to fill 2001–2009 gap</span></span>
@@ -1635,7 +1635,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-3-historic-participation-rates" class="level2" data-number="5.4">
 <h2 data-number="5.4" class="anchored" data-anchor-id="step-3-historic-participation-rates"><span class="header-section-number">5.4</span> Step 3 — Historic Participation Rates</h2>
 <p>We define the <strong>Participation Rate</strong> as: <span class="math display">\text{Rate}_{year} = \frac{\text{Actual Enrollment}_{year}}{\text{Weighted Population}_{year}}</span></p>
-<div id="14ca8a3b" class="cell" data-execution_count="13">
+<div id="17f5d884" class="cell" data-execution_count="13">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute historic participation rates</span></span>
@@ -1656,69 +1656,69 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <style type="text/css">
 </style>
 
-<table id="T_a4c2e" class="caption-top table table-sm table-striped small">
+<table id="T_16853" class="caption-top table table-sm table-striped small">
 <thead>
 <tr class="header">
 <th class="blank level0" data-quarto-table-cell-role="th">&nbsp;</th>
-<th id="T_a4c2e_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">BYU</th>
-<th id="T_a4c2e_level0_col1" class="col_heading level0 col1" data-quarto-table-cell-role="th">Ensign</th>
-<th id="T_a4c2e_level0_col2" class="col_heading level0 col2" data-quarto-table-cell-role="th">Westmin</th>
-<th id="T_a4c2e_level0_col3" class="col_heading level0 col3" data-quarto-table-cell-role="th">UofU</th>
-<th id="T_a4c2e_level0_col4" class="col_heading level0 col4" data-quarto-table-cell-role="th">UVU</th>
-<th id="T_a4c2e_level0_col5" class="col_heading level0 col5" data-quarto-table-cell-role="th">WSU</th>
-<th id="T_a4c2e_level0_col6" class="col_heading level0 col6" data-quarto-table-cell-role="th">SLCC</th>
+<th id="T_16853_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">BYU</th>
+<th id="T_16853_level0_col1" class="col_heading level0 col1" data-quarto-table-cell-role="th">Ensign</th>
+<th id="T_16853_level0_col2" class="col_heading level0 col2" data-quarto-table-cell-role="th">Westmin</th>
+<th id="T_16853_level0_col3" class="col_heading level0 col3" data-quarto-table-cell-role="th">UofU</th>
+<th id="T_16853_level0_col4" class="col_heading level0 col4" data-quarto-table-cell-role="th">UVU</th>
+<th id="T_16853_level0_col5" class="col_heading level0 col5" data-quarto-table-cell-role="th">WSU</th>
+<th id="T_16853_level0_col6" class="col_heading level0 col6" data-quarto-table-cell-role="th">SLCC</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<th id="T_a4c2e_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">2019</th>
-<td id="T_a4c2e_row0_col0" class="data row0 col0">34.36%</td>
-<td id="T_a4c2e_row0_col1" class="data row0 col1">1.98%</td>
-<td id="T_a4c2e_row0_col2" class="data row0 col2">2.16%</td>
-<td id="T_a4c2e_row0_col3" class="data row0 col3">31.84%</td>
-<td id="T_a4c2e_row0_col4" class="data row0 col4">38.87%</td>
-<td id="T_a4c2e_row0_col5" class="data row0 col5">75.75%</td>
-<td id="T_a4c2e_row0_col6" class="data row0 col6">25.68%</td>
+<th id="T_16853_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">2019</th>
+<td id="T_16853_row0_col0" class="data row0 col0">34.36%</td>
+<td id="T_16853_row0_col1" class="data row0 col1">1.98%</td>
+<td id="T_16853_row0_col2" class="data row0 col2">2.16%</td>
+<td id="T_16853_row0_col3" class="data row0 col3">31.84%</td>
+<td id="T_16853_row0_col4" class="data row0 col4">38.87%</td>
+<td id="T_16853_row0_col5" class="data row0 col5">75.75%</td>
+<td id="T_16853_row0_col6" class="data row0 col6">25.68%</td>
 </tr>
 <tr class="even">
-<th id="T_a4c2e_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">2020</th>
-<td id="T_a4c2e_row1_col0" class="data row1 col0">29.97%</td>
-<td id="T_a4c2e_row1_col1" class="data row1 col1">1.63%</td>
-<td id="T_a4c2e_row1_col2" class="data row1 col2">1.54%</td>
-<td id="T_a4c2e_row1_col3" class="data row1 col3">19.21%</td>
-<td id="T_a4c2e_row1_col4" class="data row1 col4">26.60%</td>
-<td id="T_a4c2e_row1_col5" class="data row1 col5">50.57%</td>
-<td id="T_a4c2e_row1_col6" class="data row1 col6">19.29%</td>
+<th id="T_16853_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">2020</th>
+<td id="T_16853_row1_col0" class="data row1 col0">29.97%</td>
+<td id="T_16853_row1_col1" class="data row1 col1">1.63%</td>
+<td id="T_16853_row1_col2" class="data row1 col2">1.54%</td>
+<td id="T_16853_row1_col3" class="data row1 col3">19.21%</td>
+<td id="T_16853_row1_col4" class="data row1 col4">26.60%</td>
+<td id="T_16853_row1_col5" class="data row1 col5">50.57%</td>
+<td id="T_16853_row1_col6" class="data row1 col6">19.29%</td>
 </tr>
 <tr class="odd">
-<th id="T_a4c2e_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">2021</th>
-<td id="T_a4c2e_row2_col0" class="data row2 col0">32.69%</td>
-<td id="T_a4c2e_row2_col1" class="data row2 col1">1.69%</td>
-<td id="T_a4c2e_row2_col2" class="data row2 col2">1.34%</td>
-<td id="T_a4c2e_row2_col3" class="data row2 col3">30.40%</td>
-<td id="T_a4c2e_row2_col4" class="data row2 col4">32.39%</td>
-<td id="T_a4c2e_row2_col5" class="data row2 col5">66.56%</td>
-<td id="T_a4c2e_row2_col6" class="data row2 col6">20.08%</td>
+<th id="T_16853_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">2021</th>
+<td id="T_16853_row2_col0" class="data row2 col0">32.69%</td>
+<td id="T_16853_row2_col1" class="data row2 col1">1.69%</td>
+<td id="T_16853_row2_col2" class="data row2 col2">1.34%</td>
+<td id="T_16853_row2_col3" class="data row2 col3">30.40%</td>
+<td id="T_16853_row2_col4" class="data row2 col4">32.39%</td>
+<td id="T_16853_row2_col5" class="data row2 col5">66.56%</td>
+<td id="T_16853_row2_col6" class="data row2 col6">20.08%</td>
 </tr>
 <tr class="even">
-<th id="T_a4c2e_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">2022</th>
-<td id="T_a4c2e_row3_col0" class="data row3 col0">30.02%</td>
-<td id="T_a4c2e_row3_col1" class="data row3 col1">1.45%</td>
-<td id="T_a4c2e_row3_col2" class="data row3 col2">1.11%</td>
-<td id="T_a4c2e_row3_col3" class="data row3 col3">29.74%</td>
-<td id="T_a4c2e_row3_col4" class="data row3 col4">32.05%</td>
-<td id="T_a4c2e_row3_col5" class="data row3 col5">65.31%</td>
-<td id="T_a4c2e_row3_col6" class="data row3 col6">19.08%</td>
+<th id="T_16853_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">2022</th>
+<td id="T_16853_row3_col0" class="data row3 col0">30.02%</td>
+<td id="T_16853_row3_col1" class="data row3 col1">1.45%</td>
+<td id="T_16853_row3_col2" class="data row3 col2">1.11%</td>
+<td id="T_16853_row3_col3" class="data row3 col3">29.74%</td>
+<td id="T_16853_row3_col4" class="data row3 col4">32.05%</td>
+<td id="T_16853_row3_col5" class="data row3 col5">65.31%</td>
+<td id="T_16853_row3_col6" class="data row3 col6">19.08%</td>
 </tr>
 <tr class="odd">
-<th id="T_a4c2e_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">2023</th>
-<td id="T_a4c2e_row4_col0" class="data row4 col0">30.92%</td>
-<td id="T_a4c2e_row4_col1" class="data row4 col1">1.62%</td>
-<td id="T_a4c2e_row4_col2" class="data row4 col2">1.08%</td>
-<td id="T_a4c2e_row4_col3" class="data row4 col3">30.98%</td>
-<td id="T_a4c2e_row4_col4" class="data row4 col4">34.66%</td>
-<td id="T_a4c2e_row4_col5" class="data row4 col5">68.31%</td>
-<td id="T_a4c2e_row4_col6" class="data row4 col6">19.99%</td>
+<th id="T_16853_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">2023</th>
+<td id="T_16853_row4_col0" class="data row4 col0">30.92%</td>
+<td id="T_16853_row4_col1" class="data row4 col1">1.62%</td>
+<td id="T_16853_row4_col2" class="data row4 col2">1.08%</td>
+<td id="T_16853_row4_col3" class="data row4 col3">30.98%</td>
+<td id="T_16853_row4_col4" class="data row4 col4">34.66%</td>
+<td id="T_16853_row4_col5" class="data row4 col5">68.31%</td>
+<td id="T_16853_row4_col6" class="data row4 col6">19.99%</td>
 </tr>
 </tbody>
 </table>
@@ -1728,7 +1728,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-4-linear-regression-model" class="level2" data-number="5.5">
 <h2 data-number="5.5" class="anchored" data-anchor-id="step-4-linear-regression-model"><span class="header-section-number">5.5</span> Step 4 — Linear Regression Model</h2>
 <p>We fit a linear trend to each university’s historical participation rate: <span class="math display">\text{Rate}(t) = \alpha + \beta \cdot t, \quad t = \text{Year} - 1999</span> The model is trained on 2000–2020 using all available historical data, including the 2020–2023 COVID disruption and recovery period.</p>
-<div id="7677888a" class="cell" data-execution_count="14">
+<div id="538f2eef" class="cell" data-execution_count="14">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>models_dict      <span class="op">=</span> {}</span>
@@ -1781,7 +1781,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-5-calibration-shift-calculation" class="level2" data-number="5.6">
 <h2 data-number="5.6" class="anchored" data-anchor-id="step-5-calibration-shift-calculation"><span class="header-section-number">5.6</span> Step 5 — Calibration Shift Calculation</h2>
 <p>Computes a per-school additive shift in RATE units so the model passes exactly through the <code>CALIB_YEAR</code> actual enrollment when <code>CALIB_SHIFT = True</code>.</p>
-<div id="199bb3a1" class="cell" data-execution_count="15">
+<div id="cea3a777" class="cell" data-execution_count="15">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>shift_factors <span class="op">=</span> {}</span>
@@ -1808,41 +1808,41 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <style type="text/css">
 </style>
 
-<table id="T_c8772" class="caption-top table table-sm table-striped small">
+<table id="T_49e1b" class="caption-top table table-sm table-striped small">
 <thead>
 <tr class="header">
 <th class="blank level0" data-quarto-table-cell-role="th">&nbsp;</th>
-<th id="T_c8772_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">Shift</th>
+<th id="T_49e1b_level0_col0" class="col_heading level0 col0" data-quarto-table-cell-role="th">Shift</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<th id="T_c8772_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">BYU</th>
-<td id="T_c8772_row0_col0" class="data row0 col0">-0.0474</td>
+<th id="T_49e1b_level0_row0" class="row_heading level0 row0" data-quarto-table-cell-role="th">BYU</th>
+<td id="T_49e1b_row0_col0" class="data row0 col0">-0.0474</td>
 </tr>
 <tr class="even">
-<th id="T_c8772_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">Ensign</th>
-<td id="T_c8772_row1_col0" class="data row1 col0">-0.0111</td>
+<th id="T_49e1b_level0_row1" class="row_heading level0 row1" data-quarto-table-cell-role="th">Ensign</th>
+<td id="T_49e1b_row1_col0" class="data row1 col0">-0.0111</td>
 </tr>
 <tr class="odd">
-<th id="T_c8772_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">Westmin</th>
-<td id="T_c8772_row2_col0" class="data row2 col0">-0.0169</td>
+<th id="T_49e1b_level0_row2" class="row_heading level0 row2" data-quarto-table-cell-role="th">Westmin</th>
+<td id="T_49e1b_row2_col0" class="data row2 col0">-0.0169</td>
 </tr>
 <tr class="even">
-<th id="T_c8772_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">UofU</th>
-<td id="T_c8772_row3_col0" class="data row3 col0">-0.0189</td>
+<th id="T_49e1b_level0_row3" class="row_heading level0 row3" data-quarto-table-cell-role="th">UofU</th>
+<td id="T_49e1b_row3_col0" class="data row3 col0">-0.0189</td>
 </tr>
 <tr class="odd">
-<th id="T_c8772_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">UVU</th>
-<td id="T_c8772_row4_col0" class="data row4 col0">-0.0574</td>
+<th id="T_49e1b_level0_row4" class="row_heading level0 row4" data-quarto-table-cell-role="th">UVU</th>
+<td id="T_49e1b_row4_col0" class="data row4 col0">-0.0574</td>
 </tr>
 <tr class="even">
-<th id="T_c8772_level0_row5" class="row_heading level0 row5" data-quarto-table-cell-role="th">WSU</th>
-<td id="T_c8772_row5_col0" class="data row5 col0">-0.1348</td>
+<th id="T_49e1b_level0_row5" class="row_heading level0 row5" data-quarto-table-cell-role="th">WSU</th>
+<td id="T_49e1b_row5_col0" class="data row5 col0">-0.1348</td>
 </tr>
 <tr class="odd">
-<th id="T_c8772_level0_row6" class="row_heading level0 row6" data-quarto-table-cell-role="th">SLCC</th>
-<td id="T_c8772_row6_col0" class="data row6 col0">-0.0935</td>
+<th id="T_49e1b_level0_row6" class="row_heading level0 row6" data-quarto-table-cell-role="th">SLCC</th>
+<td id="T_49e1b_row6_col0" class="data row6 col0">-0.0935</td>
 </tr>
 </tbody>
 </table>
@@ -1852,7 +1852,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <section id="step-6-7-final-forecasts-regional-control-totals" class="level2" data-number="5.7">
 <h2 data-number="5.7" class="anchored" data-anchor-id="step-6-7-final-forecasts-regional-control-totals"><span class="header-section-number">5.7</span> Step 6 &amp; 7 — Final Forecasts &amp; Regional Control Totals</h2>
 <p><strong>Why a Control Total?</strong> Left unchecked, applying straight-line growth to growing populations could suggest that an impossibly high percentage of the region is attending college. We set a <code>PENETRATION_CEILING</code> based on historical peaks to proportionally scale down college projections if total regional enrollment exceeds reality.</p>
-<div id="865bf252" class="cell" data-execution_count="16">
+<div id="210b422a" class="cell" data-execution_count="16">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>total_enroll_hist   <span class="op">=</span> df_ipeds[SCHOOL_KEYS].<span class="bu">sum</span>(axis<span class="op">=</span><span class="dv">1</span>).loc[<span class="dv">2000</span>:<span class="dv">2023</span>]</span>
@@ -1923,7 +1923,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <p>BYU and the University of Utah draw students nationally and internationally, making their enrollment largely independent of local Wasatch Front demographics. Tying their forecast to the regional college-age population via participation rates produces unrealistic trajectories as local cohort sizes fluctuate.</p>
 <p>Instead, we model each flagship’s enrollment directly as a function of time: <span class="math display"> \text{Enrollment}(t) = \alpha + \beta \cdot t, \quad t = \text{Year} - 1999 </span></p>
 <p>This treats their historical enrollment trend as the best predictor of future enrollment, bypassing catchment weights, weighted populations, and participation-rate mechanics entirely. The resulting forecasts are then substituted back into the base linear forecast for BYU and UofU only; all other universities retain their original participation-rate projections.</p>
-<div id="c2fc6bf8" class="cell" data-execution_count="17">
+<div id="191b93e2" class="cell" data-execution_count="17">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>FLAGSHIP_KEYS <span class="op">=</span> [<span class="st">"BYU"</span>, <span class="st">"UofU"</span>]</span>
@@ -2056,7 +2056,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <p><strong>Background:</strong> Brigham Young University is planning to integrate a Medical School starting in 2027. The medical school is expected to enroll 100 students annually.</p>
 <p><strong>Enrollment Impact:</strong> - <strong>2027:</strong> +100 students (first year class) - <strong>2028:</strong> +100 students (second year class added; total +200) - <strong>2029:</strong> +100 students (third year class added; total +300) - <strong>2030:</strong> +100 students (fourth year class added; total +400) - <strong>2031 onwards:</strong> Steady state at +400 students (first cohort graduates as new cohort enters)</p>
 <p>This adjustment is applied to BYU’s flagship override forecast to reflect the planned expansion.</p>
-<div id="a219b488" class="cell" data-execution_count="18">
+<div id="21be96e0" class="cell" data-execution_count="18">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co"># BYU Medical School Enrollment Adjustment</span></span>
@@ -2102,7 +2102,7 @@ Figure&nbsp;1: Historical and Projected College-Age Population (18-24) by County
 <p><strong>Methodology:</strong> - <strong>Non-UVU institutions</strong>: Apply 2025 USHE campus splits to all years (2000-2060) - <strong>UVU campuses</strong>: Apply time-varying proportions from historical spatial planning data</p>
 <section id="step-1-load-ushe-2025-campus-enrollment-data" class="level2" data-number="8.1">
 <h2 data-number="8.1" class="anchored" data-anchor-id="step-1-load-ushe-2025-campus-enrollment-data"><span class="header-section-number">8.1</span> Step 1: Load USHE 2025 Campus Enrollment Data</h2>
-<div id="02dd865d" class="cell" data-execution_count="19">
+<div id="c9b3a70e" class="cell" data-execution_count="19">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load USHE 2025 enrollment data</span></span>
@@ -2154,7 +2154,7 @@ Salt Lake Community College: 23,802</code></pre>
 </section>
 <section id="step-2-define-campus-mapping-non-uvu-institutions" class="level2" data-number="8.2">
 <h2 data-number="8.2" class="anchored" data-anchor-id="step-2-define-campus-mapping-non-uvu-institutions"><span class="header-section-number">8.2</span> Step 2: Define Campus Mapping (Non-UVU Institutions)</h2>
-<div id="f54f7cbc" class="cell" data-execution_count="20">
+<div id="da8329c3" class="cell" data-execution_count="20">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Map USHE Site names to campus codes for non-UVU institutions</span></span>
@@ -2184,7 +2184,7 @@ Salt Lake Community College: 23,802</code></pre>
 </section>
 <section id="step-3-calculate-campus-percentages-non-uvu" class="level2" data-number="8.3">
 <h2 data-number="8.3" class="anchored" data-anchor-id="step-3-calculate-campus-percentages-non-uvu"><span class="header-section-number">8.3</span> Step 3: Calculate Campus Percentages (Non-UVU)</h2>
-<div id="1c714eb6" class="cell" data-execution_count="21">
+<div id="45666233" class="cell" data-execution_count="21">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Calculate percentage splits for non-UVU institutions</span></span>
@@ -2256,7 +2256,7 @@ Final Non-UVU Campus Split Percentages:
 </section>
 <section id="step-4-hardcode-uvu-campus-historical-data" class="level2" data-number="8.4">
 <h2 data-number="8.4" class="anchored" data-anchor-id="step-4-hardcode-uvu-campus-historical-data"><span class="header-section-number">8.4</span> Step 4: Hardcode UVU Campus Historical Data</h2>
-<div id="9929f345" class="cell" data-execution_count="22">
+<div id="d335ce45" class="cell" data-execution_count="22">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Hardcoded UVU campus enrollment from previous RTP spatial planning</span></span>
@@ -2332,7 +2332,7 @@ Sample (2019-2026 - satellite campus openings):
 </section>
 <section id="step-5-calculate-uvu-time-varying-campus-proportions" class="level2" data-number="8.5">
 <h2 data-number="8.5" class="anchored" data-anchor-id="step-5-calculate-uvu-time-varying-campus-proportions"><span class="header-section-number">8.5</span> Step 5: Calculate UVU Time-Varying Campus Proportions</h2>
-<div id="2ebb7071" class="cell" data-execution_count="23">
+<div id="2af7ed45" class="cell" data-execution_count="23">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Calculate proportion of total UVU enrollment at each campus for each year</span></span>
@@ -2373,7 +2373,7 @@ Sample (2019-2026 - satellite campus openings):
 </section>
 <section id="step-6-create-combined-historical-forecast-dataset" class="level2" data-number="8.6">
 <h2 data-number="8.6" class="anchored" data-anchor-id="step-6-create-combined-historical-forecast-dataset"><span class="header-section-number">8.6</span> Step 6: Create Combined Historical + Forecast Dataset</h2>
-<div id="9194b385" class="cell" data-execution_count="24">
+<div id="28713f04" class="cell" data-execution_count="24">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Combine historical enrollment (2000-2023) with forecast (2024-2060)</span></span>
@@ -2415,7 +2415,7 @@ Projected: 259</code></pre>
 </section>
 <section id="step-7-disaggregate-to-campus-level-2000-2060" class="level2" data-number="8.7">
 <h2 data-number="8.7" class="anchored" data-anchor-id="step-7-disaggregate-to-campus-level-2000-2060"><span class="header-section-number">8.7</span> Step 7: Disaggregate to Campus Level (2000-2060)</h2>
-<div id="b40b1ecb" class="cell" data-execution_count="25">
+<div id="ce09dbef" class="cell" data-execution_count="25">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create year-indexed output dataframe</span></span>
@@ -2550,7 +2550,7 @@ Generated 17 campus columns</code></pre>
 </section>
 <section id="step-8-finalize-column-order-and-export" class="level2" data-number="8.8">
 <h2 data-number="8.8" class="anchored" data-anchor-id="step-8-finalize-column-order-and-export"><span class="header-section-number">8.8</span> Step 8: Finalize Column Order and Export</h2>
-<div id="9c4f900a" class="cell" data-execution_count="26">
+<div id="d3050b82" class="cell" data-execution_count="26">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Define desired column order</span></span>
@@ -2731,7 +2731,7 @@ Last 5 years:
 </section>
 <section id="export-campus-level-forecast" class="level2" data-number="8.9">
 <h2 data-number="8.9" class="anchored" data-anchor-id="export-campus-level-forecast"><span class="header-section-number">8.9</span> Export Campus-Level Forecast</h2>
-<div id="d828b733" class="cell" data-execution_count="27">
+<div id="3cba3e86" class="cell" data-execution_count="27">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Export disaggregated campus-level forecast (2000-2060)</span></span>
@@ -2761,14 +2761,14 @@ Total campuses: 16</code></pre>
 <section id="campus-locations" class="level2" data-number="9.1">
 <h2 data-number="9.1" class="anchored" data-anchor-id="campus-locations"><span class="header-section-number">9.1</span> Campus Locations</h2>
 <p>Representative point per campus, geocoded via the US Census Geocoder (existing campuses) or OpenStreetMap/Nominatim (<code>SLCC_HM</code>, <code>UVU_Vineyard</code>, <code>UVU_Payson</code> lack a normal street address; <code>UVU_Payson</code> isn’t built yet and uses the Payson city centroid as a placeholder).</p>
-<div id="9338534e" class="cell" data-execution_count="28">
+<div id="fca91ea5" class="cell" data-execution_count="28">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Year of campus-level enrollment to allocate to the MAZ layer</span></span>
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>MAZ_ENROLLMENT_YEAR <span class="op">=</span> <span class="dv">2023</span></span>
 <span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_shapefile"</span>] <span class="op">=</span> Path(<span class="st">"data/TAZ/microzones_draft_20260610AndyaddedmazidforUtah.zip"</span>)</span>
-<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_enrollment_output"</span>] <span class="op">=</span> Path(<span class="ss">f"results/college_enrollment_maz_</span><span class="sc">{</span>MAZ_ENROLLMENT_YEAR<span class="sc">}</span><span class="ss">.shp"</span>)</span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_enrollment_output"</span>] <span class="op">=</span> Path(<span class="ss">f"results/college_enrollment_maz_</span><span class="sc">{</span>MAZ_ENROLLMENT_YEAR<span class="sc">}</span><span class="ss">.shp.zip"</span>)</span>
 <span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a><span class="co"># WFRC + MAG area colleges — keys match the campus columns in df_campus_final</span></span>
 <span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a>CAMPUS_LOCATIONS <span class="op">=</span> {</span>
@@ -2794,7 +2794,7 @@ Total campuses: 16</code></pre>
 </section>
 <section id="point-in-polygon-join-export" class="level2" data-number="9.2">
 <h2 data-number="9.2" class="anchored" data-anchor-id="point-in-polygon-join-export"><span class="header-section-number">9.2</span> Point-in-Polygon Join &amp; Export</h2>
-<div id="b9c6e458" class="cell" data-execution_count="29">
+<div id="b88b9e1c" class="cell" data-execution_count="29">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> shapely.geometry <span class="im">import</span> Point</span>
@@ -2819,7 +2819,7 @@ Total campuses: 16</code></pre>
 <span id="cb42-20"><a href="#cb42-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Saved </span><span class="sc">{</span>MAZ_ENROLLMENT_YEAR<span class="sc">}</span><span class="ss"> enrollment to </span><span class="sc">{</span>PATHS[<span class="st">'maz_enrollment_output'</span>]<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>Saved 2023 enrollment to results\college_enrollment_maz_2023.shp</code></pre>
+<pre><code>Saved 2023 enrollment to results\college_enrollment_maz_2023.shp.zip</code></pre>
 </div>
 </div>
 <hr>
@@ -2827,7 +2827,7 @@ Total campuses: 16</code></pre>
 </section>
 <section id="ojs-data-preparation-exports" class="level1" data-number="10">
 <h1 data-number="10"><span class="header-section-number">10</span> OJS Data Preparation &amp; Exports</h1>
-<div id="22a06f57" class="cell" data-execution_count="30">
+<div id="72076ccf" class="cell" data-execution_count="30">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ── Export Only the Final Adjusted Output CSV ─────────────────────────────────</span></span>
@@ -5222,7 +5222,7 @@ window._ojs.runtime.interpretFromScriptTags();
 <span id="cb52-1613"><a href="#cb52-1613" aria-hidden="true" tabindex="-1"></a>MAZ_ENROLLMENT_YEAR <span class="op">=</span> <span class="dv">2023</span></span>
 <span id="cb52-1614"><a href="#cb52-1614" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb52-1615"><a href="#cb52-1615" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_shapefile"</span>] <span class="op">=</span> Path(<span class="st">"data/TAZ/microzones_draft_20260610AndyaddedmazidforUtah.zip"</span>)</span>
-<span id="cb52-1616"><a href="#cb52-1616" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_enrollment_output"</span>] <span class="op">=</span> Path(<span class="ss">f"results/college_enrollment_maz_</span><span class="sc">{</span>MAZ_ENROLLMENT_YEAR<span class="sc">}</span><span class="ss">.shp"</span>)</span>
+<span id="cb52-1616"><a href="#cb52-1616" aria-hidden="true" tabindex="-1"></a>PATHS[<span class="st">"maz_enrollment_output"</span>] <span class="op">=</span> Path(<span class="ss">f"results/college_enrollment_maz_</span><span class="sc">{</span>MAZ_ENROLLMENT_YEAR<span class="sc">}</span><span class="ss">.shp.zip"</span>)</span>
 <span id="cb52-1617"><a href="#cb52-1617" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb52-1618"><a href="#cb52-1618" aria-hidden="true" tabindex="-1"></a><span class="co"># WFRC + MAG area colleges — keys match the campus columns in df_campus_final</span></span>
 <span id="cb52-1619"><a href="#cb52-1619" aria-hidden="true" tabindex="-1"></a>CAMPUS_LOCATIONS <span class="op">=</span> {</span>
