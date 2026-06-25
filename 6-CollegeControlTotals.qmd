@@ -1555,26 +1555,28 @@ Representative point per campus, geocoded via the US Census Geocoder (existing c
 MAZ_ENROLLMENT_YEAR = 2023
 
 PATHS["maz_shapefile"] = Path("data/TAZ/microzones_draft_20260610AndyaddedmazidforUtah.zip")
-PATHS["maz_enrollment_output"] = Path(f"results/college_enrollment_maz_{MAZ_ENROLLMENT_YEAR}.shp.zip")
+PATHS["maz_enrollment_output"] = Path(
+    f"results/college_enrollment_maz_{MAZ_ENROLLMENT_YEAR}.shp.zip"
+)
 
 # WFRC + MAG area colleges — keys match the campus columns in df_campus_final
 CAMPUS_LOCATIONS = {
-    "Ensign":     (40.771400, -111.899750),
-    "Westmin":    (40.729332, -111.853967),
-    "UofU_Main":  (40.764483, -111.850365),
-    "WSU_Main":   (41.192559, -111.948727),
-    "WSU_Davis":  (41.099539, -111.987578),
-    "SLCC_Main":  (40.669180, -111.938953),
-    "SLCC_SC":    (40.735521, -111.888133),
-    "SLCC_JD":    (40.587768, -111.974119),
-    "SLCC_ML":    (40.574469, -111.900845),
-    "SLCC_HM":    (40.488216, -111.985251),
-    "BYU":          (40.255420, -111.649681),
-    "UVU_Main":     (40.279411, -111.717887),
-    "UVU_Geneva":   (40.279705, -111.730573),
-    "UVU_Lehi":     (40.426794, -111.894441),
-    "UVU_Vineyard": (40.308232, -111.742386),
-    "UVU_Payson":   (40.044399, -111.732152),
+    "Ensign": (40.771180530806994, -111.9002465430066),
+    "Westmin": (40.73221908563363, -111.85497832879642),
+    "UofU_Main": (40.76301882243654, -111.84509051716005),
+    "WSU_Main": (41.19253220864767, -111.94459881036707),
+    "WSU_Davis": (41.09888202949566, -111.98251709610648),
+    "SLCC_Main": (40.67210819472819, -111.9428303160198),
+    "SLCC_SC": (40.73515157561941, -111.88549497530391),
+    "SLCC_JD": (40.58380544000254, -111.97470446763771),
+    "SLCC_ML": (40.57483612163177, -111.90232983675175),
+    "SLCC_HM": (40.48852562669204, -111.98341561621633),
+    "BYU": (40.24877658596609, -111.64920574368028),
+    "UVU_Main": (40.27875809516613, -111.71536707456268),
+    "UVU_Geneva": (40.28038752645332, -111.72851644229027),
+    "UVU_Lehi": (40.42779753848785, -111.89614493206128),
+    "UVU_Vineyard": (40.30674715318882, -111.74298418973568),
+    "UVU_Payson": (40.044399, -111.732152),
 }
 ```
 
