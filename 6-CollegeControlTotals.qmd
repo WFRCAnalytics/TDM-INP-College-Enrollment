@@ -1542,6 +1542,71 @@ print(f"Total campuses: {len(COLUMN_ORDER) - 1}")
 
 ---
 
+# Spatial Allocation: College Enrollment to MAZ (Point-in-Polygon)
+
+We assign each campus's enrollment to its host Micro Analysis Zone (MAZ) by matching a representative campus point to the MAZ polygon that contains it, replacing the legacy TAZ-level assignment (`BaseDistribution.csv`, `collegeHomeLocations.csv`).
+
+## Campus Locations
+
+Representative point per campus, geocoded via the US Census Geocoder (existing campuses) or OpenStreetMap/Nominatim (`SLCC_HM`, `UVU_Vineyard`, `UVU_Payson` lack a normal street address; `UVU_Payson` isn't built yet and uses the Payson city centroid as a placeholder).
+
+```{python}
+# Year of campus-level enrollment to allocate to the MAZ layer
+MAZ_ENROLLMENT_YEAR = 2023
+
+PATHS["maz_shapefile"] = Path("data/TAZ/microzones_draft_20260610AndyaddedmazidforUtah.zip")
+PATHS["maz_enrollment_output"] = Path(
+    f"results/college_enrollment_maz_{MAZ_ENROLLMENT_YEAR}.shp.zip"
+)
+
+# WFRC + MAG area colleges — keys match the campus columns in df_campus_final
+CAMPUS_LOCATIONS = {
+    "Ensign": (40.771180530806994, -111.9002465430066),
+    "Westmin": (40.73221908563363, -111.85497832879642),
+    "UofU_Main": (40.76301882243654, -111.84509051716005),
+    "WSU_Main": (41.19253220864767, -111.94459881036707),
+    "WSU_Davis": (41.09888202949566, -111.98251709610648),
+    "SLCC_Main": (40.67210819472819, -111.9428303160198),
+    "SLCC_SC": (40.73515157561941, -111.88549497530391),
+    "SLCC_JD": (40.58380544000254, -111.97470446763771),
+    "SLCC_ML": (40.57483612163177, -111.90232983675175),
+    "SLCC_HM": (40.48852562669204, -111.98341561621633),
+    "BYU": (40.24877658596609, -111.64920574368028),
+    "UVU_Main": (40.27875809516613, -111.71536707456268),
+    "UVU_Geneva": (40.28038752645332, -111.72851644229027),
+    "UVU_Lehi": (40.42779753848785, -111.89614493206128),
+    "UVU_Vineyard": (40.30674715318882, -111.74298418973568),
+    "UVU_Payson": (40.044399, -111.732152),
+}
+```
+
+## Point-in-Polygon Join & Export
+
+```{python}
+from shapely.geometry import Point
+
+gdf_maz = gpd.read_file(f"/vsizip/{PATHS['maz_shapefile']}")
+
+gdf_campuses = gpd.GeoDataFrame(
+    {"univ_name": list(CAMPUS_LOCATIONS.keys())},
+    geometry=[Point(lon, lat) for lat, lon in CAMPUS_LOCATIONS.values()],
+    crs="EPSG:4326",
+).to_crs(gdf_maz.crs)
+gdf_campuses["enroll_uni"] = gdf_campuses["univ_name"].map(
+    df_campus_final.set_index(";YEAR").loc[MAZ_ENROLLMENT_YEAR]
+)
+
+campus_maz = gpd.sjoin(gdf_campuses, gdf_maz[["maz_id", "geometry"]], predicate="within")
+
+gdf_maz_export = gdf_maz.merge(campus_maz[["maz_id", "univ_name", "enroll_uni"]], on="maz_id", how="left")
+gdf_maz_export["enroll_uni"] = gdf_maz_export["enroll_uni"].fillna(0).astype(int)
+
+gdf_maz_export.to_file(PATHS["maz_enrollment_output"])
+print(f"Saved {MAZ_ENROLLMENT_YEAR} enrollment to {PATHS['maz_enrollment_output']}")
+```
+
+---
+
 # OJS Data Preparation & Exports
 
 ```{python}
